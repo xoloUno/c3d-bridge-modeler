@@ -21,7 +21,7 @@ clr.AddReference("acdbmgd")
 clr.AddReference("AeccDbMgd")
 
 from Autodesk.AutoCAD.DatabaseServices import OpenMode  # noqa: E402
-from Autodesk.AutoCAD.Geometry import Point2d  # noqa: E402
+from System import Double  # noqa: E402
 
 from c3d_doc import active_civil_doc  # noqa: E402
 
@@ -57,13 +57,16 @@ def find_surface(tr, name: str):
 def point_at_station(alignment_obj, station: float, offset: float = 0.0):
     """Return (easting, northing) on the alignment.
 
-    Civil 3D's `Alignment.PointLocation(station, offset, out easting, out northing)`
-    surfaces in pythonnet by returning the out parameters. The exact return
-    shape varies by pythonnet version; the form below works on pythonnet 3.x
-    where out parameters become a tuple alongside the void return.
+    `Alignment.PointLocation(station, offset, ref easting, ref northing)`
+    is a void .NET method with by-reference outputs. PythonNet requires
+    explicit `clr.Reference[Double]()` placeholders for ref/out parameters
+    — calling with only the value arguments doesn't match any overload
+    and fails at runtime.
     """
-    easting, northing = alignment_obj.PointLocation(station, offset)
-    return (easting, northing)
+    easting = clr.Reference[Double]()
+    northing = clr.Reference[Double]()
+    alignment_obj.PointLocation(station, offset, easting, northing)
+    return (easting.Value, northing.Value)
 
 
 def direction_at_station(alignment_obj, station: float) -> float:
