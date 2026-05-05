@@ -26,31 +26,34 @@ _COLOR_PIER = 4
 def main(repo_root: str, params_path: str) -> str:
     p = params.load(params_path)
 
-    doc = c3d_doc.active_doc()
+    # Note: do NOT call doc.LockDocument() here. Dynamo Python nodes already
+    # execute inside the active document's lock context. Re-locking causes
+    # pythonnet to misroute the Python `__exit__(exc_type, exc_val, tb)` to
+    # `DocumentLock.OnExit()`, whose signature mismatch raises a TypeError
+    # during exception unwinding and swallows the real underlying error.
     db = c3d_doc.active_db()
 
-    with doc.LockDocument():
-        with c3d_doc.start_transaction() as tr:
-            erased = purge.purge_bridge_objects(tr, db)
-            layers.ensure_layer(tr, db, LAYER_DECK, color=_COLOR_DECK)
-            layers.ensure_layer(tr, db, LAYER_PIER, color=_COLOR_PIER)
-            xdata.ensure_regapp(tr, db, XDATA_APP)
+    with c3d_doc.start_transaction() as tr:
+        erased = purge.purge_bridge_objects(tr, db)
+        layers.ensure_layer(tr, db, LAYER_DECK, color=_COLOR_DECK)
+        layers.ensure_layer(tr, db, LAYER_PIER, color=_COLOR_PIER)
+        xdata.ensure_regapp(tr, db, XDATA_APP)
 
-            alignment_obj = al.find_alignment(tr, p.alignment_name)
-            profile_obj = al.find_profile(tr, alignment_obj, p.profile_name)
+        alignment_obj = al.find_alignment(tr, p.alignment_name)
+        profile_obj = al.find_profile(tr, alignment_obj, p.profile_name)
 
-            deck_oid = _create_deck(tr, db, alignment_obj, profile_obj, p)
-            xdata.write(tr, deck_oid, XDATA_APP, {
-                "phase": 0, "element": "DECK", "id": "DECK-1",
+        deck_oid = _create_deck(tr, db, alignment_obj, profile_obj, p)
+        xdata.write(tr, deck_oid, XDATA_APP, {
+            "phase": 0, "element": "DECK", "id": "DECK-1",
+        })
+
+        for pier in p.piers:
+            pier_oid = _create_pier(tr, db, alignment_obj, profile_obj, pier, p)
+            xdata.write(tr, pier_oid, XDATA_APP, {
+                "phase": 0, "element": "PIER", "id": pier.id,
             })
 
-            for pier in p.piers:
-                pier_oid = _create_pier(tr, db, alignment_obj, profile_obj, pier, p)
-                xdata.write(tr, pier_oid, XDATA_APP, {
-                    "phase": 0, "element": "PIER", "id": pier.id,
-                })
-
-            tr.Commit()
+        tr.Commit()
 
     return (
         f"Erased {erased} prior BRIDGE-* objects. "
