@@ -41,10 +41,17 @@ def main(repo_root: str, params_path: str) -> str:
     try:
         return _run(params_path)
     except Exception as exc:  # noqa: BLE001
-        return (
+        err = (
             f"ERROR: {type(exc).__name__}: {exc}\n"
             f"--- traceback ---\n{traceback.format_exc()}"
         )
+        # Mirror the error to the console so it's copyable from the
+        # Background Preview Console; the Watch node display isn't
+        # reliably text-selectable.
+        print("[build] FAILED:")
+        for line in err.splitlines():
+            print(f"[build] {line}")
+        return err
 
 
 def _run(params_path: str) -> str:
