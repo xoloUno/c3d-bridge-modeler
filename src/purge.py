@@ -10,9 +10,8 @@ import clr
 clr.AddReference("acdbmgd")
 
 from Autodesk.AutoCAD.DatabaseServices import (  # noqa: E402
-    BlockTable,
-    BlockTableRecord,
     OpenMode,
+    SymbolUtilityServices,
 )
 
 
@@ -22,9 +21,15 @@ _PREFIX = "BRIDGE-"
 def purge_bridge_objects(tr, db) -> int:
     """Erase all ModelSpace entities whose layer starts with `BRIDGE-`.
     Returns the count erased.
+
+    Uses `SymbolUtilityServices.GetBlockModelSpaceId(db)` rather than
+    indexing the BlockTable, because pythonnet on this Civil 3D / Dynamo
+    runtime does not surface the C# `BlockTable.this[string]` indexer as
+    Python `__getitem__` — `bt[BlockTableRecord.ModelSpace]` raises
+    `TypeError: unindexable object`.
     """
-    bt = tr.GetObject(db.BlockTableId, OpenMode.ForRead)
-    btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite)
+    ms_id = SymbolUtilityServices.GetBlockModelSpaceId(db)
+    btr = tr.GetObject(ms_id, OpenMode.ForWrite)
     count = 0
     for oid in btr:
         ent = tr.GetObject(oid, OpenMode.ForRead)

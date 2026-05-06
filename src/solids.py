@@ -10,10 +10,9 @@ import clr
 clr.AddReference("acdbmgd")
 
 from Autodesk.AutoCAD.DatabaseServices import (  # noqa: E402
-    BlockTable,
-    BlockTableRecord,
     OpenMode,
     Solid3d,
+    SymbolUtilityServices,
 )
 from Autodesk.AutoCAD.Geometry import Matrix3d, Point3d, Vector3d  # noqa: E402
 
@@ -34,8 +33,14 @@ def create_box(center, length: float, width: float, height: float, rotation_z_ra
 
 
 def append_to_modelspace(tr, db, entity, layer_name: str):
-    bt = tr.GetObject(db.BlockTableId, OpenMode.ForRead)
-    btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite)
+    """Append `entity` to ModelSpace on `layer_name`. Returns its ObjectId.
+
+    Uses `SymbolUtilityServices.GetBlockModelSpaceId(db)` instead of
+    indexing the BlockTable; see the equivalent comment in
+    `purge.purge_bridge_objects` for the pythonnet rationale.
+    """
+    ms_id = SymbolUtilityServices.GetBlockModelSpaceId(db)
+    btr = tr.GetObject(ms_id, OpenMode.ForWrite)
     entity.Layer = layer_name
     oid = btr.AppendEntity(entity)
     tr.AddNewlyCreatedDBObject(entity, True)
