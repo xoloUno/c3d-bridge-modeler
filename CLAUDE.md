@@ -10,11 +10,18 @@ See `docs/scope.md` for the full project scope, parameter definitions, phased de
 
 ## Tech Stack
 
-- **Platform:** Dynamo for Civil 3D 2026+ (Dynamo Core 3.4+)
-- **Language:** Python 3.x via PythonNet3 (CPython) inside Dynamo Python nodes
+- **Platform:** Dynamo for Civil 3D 2024 (Dynamo Core 2.x)
+- **Language:** CPython 3.x via PythonNet 3 inside Dynamo Python nodes
 - **API:** Civil 3D .NET API accessed through Python for .NET (`clr` / `pythonnet`)
 - **Output:** AutoCAD `Solid3d` objects on named `BRIDGE-*` layers with xdata metadata
 - **Parameter format:** JSON files (one per bridge)
+
+### PythonNet 3 quirks worth knowing (verified empirically in C3D 2024 Dynamo)
+
+- `clr.Reference[T]()` (the pythonnet-2.x pattern for `ref`/`out` parameters) does **not** exist. For .NET methods with `ref`/`out` doubles, pass `0.0` placeholders for those slots; pythonnet returns the modified values as part of a tuple alongside the void/return slot — see `src/alignment.py:point_at_station` for the canonical handling.
+- C# indexers (`SymbolTable.this[string]`) do **not** surface as Python `__getitem__`. Use the underlying `get_Item(name)` method instead — `lt[name]` raises `TypeError: unindexable object`. For `BlockTable` specifically, `SymbolUtilityServices.GetBlockModelSpaceId(db)` skips the indexing entirely.
+- `with doc.LockDocument():` and `with tr:` (raw `Transaction`) misroute Python's `__exit__(exc_type, exc_val, tb)` to .NET's `OnExit(int)` during exception unwinding, raising a masking `TypeError`. Wrap IDisposable lifetimes in `@contextmanager` helpers that explicitly call `Dispose()` in a `finally` block — see `src/c3d_doc.py` (`locked_document`, `transaction`).
+- A document write lock IS required around any `OpenMode.ForWrite` `tr.GetObject()` call from a Python node; without it AutoCAD raises `eLockViolation`. The lock acquired around an unrelated edit can leak in and let a script "succeed" on a warm drawing — always lock explicitly.
 
 ## Key Architecture Decisions
 

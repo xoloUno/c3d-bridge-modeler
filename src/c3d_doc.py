@@ -30,14 +30,30 @@ def active_civil_doc():
     return CivilApplication.ActiveDocument
 
 
-def start_transaction():
-    """Return a new Transaction. Use with `with`:
+@contextmanager
+def transaction():
+    """Open a database transaction; dispose it on exit.
 
-        with c3d_doc.start_transaction() as tr:
+    Use:
+
+        with c3d_doc.transaction() as tr:
             ...
             tr.Commit()
+
+    Like `locked_document()`, this wraps the .NET IDisposable in a
+    Python try/finally rather than relying on pythonnet's `with`
+    integration, so an inner exception unwinds cleanly without
+    pythonnet trying to map Python's `__exit__(exc_type, exc_val, tb)`
+    onto `Transaction.OnExit(int)` — which masked our real errors for
+    most of Phase 0 debugging.
+
+    If `tr.Commit()` is not called, `Dispose()` aborts the transaction.
     """
-    return active_db().TransactionManager.StartTransaction()
+    tr = active_db().TransactionManager.StartTransaction()
+    try:
+        yield tr
+    finally:
+        tr.Dispose()
 
 
 @contextmanager

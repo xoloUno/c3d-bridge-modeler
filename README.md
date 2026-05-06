@@ -21,6 +21,7 @@ Autodesk has no native bridge modeling tool for Civil 3D. The current multi-prod
 
 - Autodesk Civil 3D 2024+
 - Dynamo for Civil 3D (ships with Civil 3D)
+- Python node set to **CPython 3** (PythonNet 3 runtime)
 
 ## License
 

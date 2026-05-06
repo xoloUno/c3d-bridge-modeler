@@ -437,7 +437,7 @@ Alternative (more advanced): tag each solid with an xdata key linking it to its 
 | Curved girder swept solids are geometrically complex | Loft/sweep failures on tight radii | `FOLLOW_ALIGNMENT` mode is simplest (uses alignment API offsets); `CURVED_RADIUS` mode uses segmented straight approximation (chorded at small intervals) as fallback |
 | Scope creep: "just one more parameter" per bridge type | Timeline balloons from 10 weeks to 10 months | Strict phase gates; v1 = steel girder + simple substructure only |
 | AISC shape data licensing | Can't distribute shape tables | AISC dimensions are published in publicly available resources; include a curated subset; allow user override |
-| Dynamo version compatibility across Civil 3D versions | Script breaks on upgrade | Target Civil 3D 2026+ (Dynamo 3.4+); use PythonNet3 exclusively; avoid deprecated nodes |
+| Dynamo version compatibility across Civil 3D versions | Script breaks on upgrade | Target Civil 3D 2024 (Dynamo 2.x); use CPython 3 / PythonNet 3 exclusively; avoid deprecated nodes; document PythonNet 3 quirks in CLAUDE.md so they don't get re-discovered |
 
 ---
 
@@ -488,8 +488,8 @@ At 2–5 hours/week evening development time:
 | Geometry output | AutoCAD `Solid3d` objects | Civil 3D has no native bridge API class; solids support Hidden visual style, xref, viewport layer control |
 | Parameter input (Phase 0–2) | Dynamo input nodes + Python dictionaries | Quick iteration; parameters can be JSON/CSV files loaded by the script |
 | Parameter input (Phase 4+) | Dynamo Player panel or custom WPF dialog (C#) | Production-ready UI for bridge team members who don't use Dynamo |
-| Python version | PythonNet3 (CPython 3.x) | Dynamo 4.0+ default; IronPython 2.7 is deprecated; future-proof |
-| Target Civil 3D version | 2026+ (Dynamo Core 3.4+) | Latest stable; avoids backward-compat issues with older Dynamo |
+| Python version | CPython 3.x via PythonNet 3 | Selected per-node in Dynamo (CPython 3, not IronPython 2.7); IronPython 2.7 is deprecated |
+| Target Civil 3D version | 2024 (Dynamo Core 2.x) | Project requirement; pythonnet 3 quirks (`clr.Reference` removed, indexers not exposed as `__getitem__`) are documented in CLAUDE.md |
 | Shape database | Embedded JSON lookup table | No external dependencies; user can extend with custom shapes |
 | File format for parameters | JSON (one file per bridge) | Human-readable, version-control-friendly, editable outside Dynamo |
 | Layer naming convention | `BRIDGE-{COMPONENT}` (unnumbered) + xdata per solid | Clean layer list (~20 layers regardless of bridge size); per-element identity stored as xdata for filtering/selection when needed |

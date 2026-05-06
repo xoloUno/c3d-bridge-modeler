@@ -58,32 +58,25 @@ def point_at_station(alignment_obj, station: float, offset: float = 0.0):
 
     Empirical pythonnet-3 behavior on Civil 3D 2024 Dynamo:
 
-    - `clr.Reference[Double]()` does not exist (pythonnet 2.x pattern).
+    - `clr.Reference[Double]()` does not exist in this pythonnet
+      (the 2.x pattern was removed).
     - Calling `PointLocation(station, offset)` with only the two inputs
       raises `No method matches given arguments for PointLocation:
-      (float, float)`, meaning pythonnet here treats the easting/northing
-      parameters as `ref` (not `out`) and requires placeholder values.
+      (float, float)` — pythonnet here requires all 4 args.
+    - Passing 4 args (with `0.0` placeholders for the easting/northing
+      ref slots) succeeds, and pythonnet returns a 3-tuple
+      `(None, easting, northing)` where the leading `None` is the void
+      return slot.
 
-    Pass 4 args including 0.0 placeholders. PythonNet returns the
-    modified ref values as a tuple (shape varies — for a void-return
-    method with 2 refs it's typically `(easting, northing)`, but if a
-    later runtime adds the void-return slot it'd be `(None, easting,
-    northing)`). Defensive unpack handles both, plus raises an
-    informative error for any other shape.
-
-    Logs the raw return on each call so we can adjust if a future
-    pythonnet version changes the convention.
+    The defensive 2-or-3 unpack covers the observed 3-tuple shape and
+    a hypothetical future 2-tuple shape (no leading void slot).
     """
     result = alignment_obj.PointLocation(station, offset, 0.0, 0.0)
-    print(
-        f"[alignment] PointLocation({station}, {offset}) -> "
-        f"type={type(result).__name__}, value={result!r}"
-    )
     if isinstance(result, tuple):
-        if len(result) == 2:
-            return result
         if len(result) == 3:
             return (result[1], result[2])
+        if len(result) == 2:
+            return result
     raise RuntimeError(
         f"Unexpected return from Alignment.PointLocation: "
         f"type={type(result).__name__}, value={result!r}"
