@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# Dynamo
+*.dyn.bak
+.dynamo/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# Local-only parameter overrides — these hold project-specific
+# alignment / profile / surface names that shouldn't be committed.
+# The committed `test/params.phase0.json` stays as the schema example;
+# real configs live next to it as `params.<name>.local.json`.
+test/params.local.json
+test/params.*.local.json

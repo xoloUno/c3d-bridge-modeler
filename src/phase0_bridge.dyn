@@ -1,0 +1,245 @@
+{
+  "Uuid": "a21d4b4b-7564-4f8e-bed2-71231882cca4",
+  "IsCustomNode": false,
+  "Description": "",
+  "Name": "phase0_bridge",
+  "ElementResolver": {
+    "ResolutionMap": {}
+  },
+  "Inputs": [],
+  "Outputs": [],
+  "Nodes": [
+    {
+      "ConcreteType": "CoreNodeModels.Input.Directory, CoreNodeModels",
+      "Id": "4113067036a7479fb33514e143359e4f",
+      "NodeType": "ExtensionNode",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "eb12a33426cd467ab0b45eeed7cbd44d",
+          "Name": "",
+          "Description": "Directory path",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Allows you to select a directory on the system and returns its path",
+      "HintPath": "C:\\Users\\ejimenez\\OneDrive - Stantec\\Documents\\Py\\c3d-bridge-modeler",
+      "InputValue": "C:\\Users\\ejimenez\\OneDrive - Stantec\\Documents\\Py\\c3d-bridge-modeler"
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Input.Filename, CoreNodeModels",
+      "Id": "6f54bb400254404db32e580c2a16dcac",
+      "NodeType": "ExtensionNode",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "573667a214f24aee818e6092168d9762",
+          "Name": "",
+          "Description": "File Path",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Allows you to select a file on the system and returns its file path",
+      "HintPath": "C:\\Users\\ejimenez\\OneDrive - Stantec\\Documents\\Py\\c3d-bridge-modeler\\test\\params.local.json",
+      "InputValue": "..\\test\\params.local.json"
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "Code": "import sys\r\nimport os\r\n\r\n# Reload trigger — bump this number after `git pull` to force Dynamo to\r\n# treat the node as dirty and re-execute (Dynamo caches by node-body\r\n# content, so a no-op text change is enough). This is the only edit you\r\n# typically need to make to the node body itself; everything else lives\r\n# in the imported `src/*.py` files and is reloaded via the sys.modules\r\n# purge below.\r\nprint(\"[node] reload trigger v12\")\r\n\r\nrepo_root = IN[0]                                               # noqa: F821\r\nparams_path = IN[1]                                             # noqa: F821\r\n\r\nsrc_path = os.path.join(repo_root, \"src\")\r\nif src_path not in sys.path:\r\n    sys.path.insert(0, src_path)\r\n\r\n# During dev we want every node run to pick up edits across the whole\r\n# src/ tree. `importlib.reload(build)` only refreshes `build` itself —\r\n# its already-imported dependencies (`purge`, `solids`, etc.) keep their\r\n# stale module objects, and `build.purge` still references the old one.\r\n# Drop every src/ module from sys.modules so the next import is fresh.\r\n_OWN_MODULES = (\r\n    \"build\", \"params\", \"c3d_doc\", \"alignment\",\r\n    \"layers\", \"solids\", \"xdata\", \"purge\",\r\n)\r\nfor _name in _OWN_MODULES:\r\n    if _name in sys.modules:\r\n        del sys.modules[_name]\r\n\r\nimport build\r\nOUT = build.main(repo_root, params_path)                        # noqa: F821",
+      "Engine": "CPython3",
+      "EngineName": "CPython3",
+      "VariableInputPorts": true,
+      "Id": "dbfee78ec55145ce8f2fd574acd8fc8c",
+      "NodeType": "PythonScriptNode",
+      "Inputs": [
+        {
+          "Id": "8c64c02dc37b4ff8a1ccfb3e111ca1b2",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "4741598bf5ea4d51924170d48921c2b4",
+          "Name": "IN[1]",
+          "Description": "Input #1",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "9902ddd45bcd400a9680d905fc1091ac",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded Python script."
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Watch, CoreNodeModels",
+      "WatchWidth": 420.0,
+      "WatchHeight": 38.0,
+      "Id": "d754ae8790cd41ef8d5424ab7af15ed3",
+      "NodeType": "ExtensionNode",
+      "Inputs": [
+        {
+          "Id": "5d9b2d6d589d4dd7a7fd1931b2a653a5",
+          "Name": "",
+          "Description": "Node to show output from",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "68820b6764544e34ba0155b30019e30d",
+          "Name": "",
+          "Description": "Node output",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Visualizes a node's output"
+    }
+  ],
+  "Connectors": [
+    {
+      "Start": "eb12a33426cd467ab0b45eeed7cbd44d",
+      "End": "8c64c02dc37b4ff8a1ccfb3e111ca1b2",
+      "Id": "28c210f25ea04f9083ee372921dd5724",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "573667a214f24aee818e6092168d9762",
+      "End": "4741598bf5ea4d51924170d48921c2b4",
+      "Id": "ad09291e3ec9476db181f8f000726c02",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "9902ddd45bcd400a9680d905fc1091ac",
+      "End": "5d9b2d6d589d4dd7a7fd1931b2a653a5",
+      "Id": "69186c2f83ff42119ac087379ac79175",
+      "IsHidden": "False"
+    }
+  ],
+  "Dependencies": [],
+  "NodeLibraryDependencies": [
+    {
+      "Name": "params.local.json",
+      "ReferenceType": "External",
+      "Nodes": [
+        "6f54bb400254404db32e580c2a16dcac"
+      ]
+    }
+  ],
+  "Thumbnail": "",
+  "GraphDocumentationURL": null,
+  "ExtensionWorkspaceData": [
+    {
+      "ExtensionGuid": "28992e1d-abb9-417f-8b1b-05e053bee670",
+      "Name": "Properties",
+      "Version": "2.19",
+      "Data": {}
+    }
+  ],
+  "Author": "",
+  "Linting": {
+    "activeLinter": "None",
+    "activeLinterId": "7b75fb44-43fd-4631-a878-29f4d5d8399a",
+    "warningCount": 0,
+    "errorCount": 0
+  },
+  "Bindings": [],
+  "View": {
+    "Dynamo": {
+      "ScaleFactor": 1.0,
+      "HasRunWithoutCrash": true,
+      "IsVisibleInDynamoLibrary": true,
+      "Version": "2.19.4.6671",
+      "RunType": "Automatic",
+      "RunPeriod": "1000"
+    },
+    "Camera": {
+      "Name": "_Background Preview",
+      "EyeX": -17.0,
+      "EyeY": 24.0,
+      "EyeZ": 50.0,
+      "LookX": 12.0,
+      "LookY": -13.0,
+      "LookZ": -58.0,
+      "UpX": 0.0,
+      "UpY": 1.0,
+      "UpZ": 0.0
+    },
+    "ConnectorPins": [],
+    "NodeViews": [
+      {
+        "Id": "4113067036a7479fb33514e143359e4f",
+        "Name": "Directory Path",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 145.5,
+        "Y": 332.0
+      },
+      {
+        "Id": "6f54bb400254404db32e580c2a16dcac",
+        "Name": "File Path",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 80.5,
+        "Y": 506.0
+      },
+      {
+        "Id": "dbfee78ec55145ce8f2fd574acd8fc8c",
+        "Name": "Python Script",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 581.5,
+        "Y": 389.0
+      },
+      {
+        "Id": "d754ae8790cd41ef8d5424ab7af15ed3",
+        "Name": "Watch",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 829.5,
+        "Y": 418.0
+      }
+    ],
+    "Annotations": [],
+    "X": 0.0,
+    "Y": 0.0,
+    "Zoom": 1.0
+  }
+}
