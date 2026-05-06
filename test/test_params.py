@@ -40,7 +40,7 @@ def test_parse_valid():
 def test_load_from_disk_matches_committed_file():
     here = os.path.dirname(__file__)
     p = params.load(os.path.join(here, "params.phase0.json"))
-    assert p.alignment_name == "ALIGN-MAINLINE"
+    assert p.alignment_name == "EXAMPLE-ALIGNMENT"
     assert len(p.piers) == 2
 
 
