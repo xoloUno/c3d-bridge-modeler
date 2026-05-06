@@ -16,6 +16,14 @@ Dynamo node output:
 import sys
 import os
 
+# Reload trigger — bump this number after `git pull` to force Dynamo to
+# treat the node as dirty and re-execute (Dynamo caches by node-body
+# content, so a no-op text change is enough). This is the only edit you
+# typically need to make to the node body itself; everything else lives
+# in the imported `src/*.py` files and is reloaded via the sys.modules
+# purge below.
+print("[node] reload trigger v1")
+
 repo_root = IN[0]                                               # noqa: F821
 params_path = IN[1]                                             # noqa: F821
 
