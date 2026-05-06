@@ -11,14 +11,18 @@ drawing with data shortcuts attached to alignment `D-E` and profile
 captured in `CLAUDE.md` ("PythonNet 3 quirks worth knowing").
 
 ### Setup
-- [x] On Windows, edit `test/params.phase0.json` to use the actual
-      alignment, profile, and EG surface names from the reference
-      drawing's data shortcuts. Do not commit those edits if the team
-      doesn't share names.
+- [x] On Windows, copy the schema example to a local-only config:
+      `cp test/params.phase0.json test/params.local.json`. Edit
+      `test/params.local.json` with the actual alignment, profile,
+      and EG surface names from your reference drawing's data
+      shortcuts; adjust station range and pier stations to match.
+      `test/params.local.json` is gitignored so `git pull` will never
+      conflict with these edits.
 - [x] In Dynamo for Civil 3D, build `src/phase0_bridge.dyn`:
       - `Directory Path` (or `File Path` set to a folder) input → repo
         root
-      - `File Path` input → `test/params.phase0.json`
+      - `File Path` input → `test/params.local.json` (NOT
+        `params.phase0.json` — that's the committed schema example)
       - Python Script node; paste contents of `src/phase0_node.py`;
         wire `IN[0]` ← repo root, `IN[1]` ← params path
       - `Watch` node on the Python node's output
