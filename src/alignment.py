@@ -21,7 +21,6 @@ clr.AddReference("acdbmgd")
 clr.AddReference("AeccDbMgd")
 
 from Autodesk.AutoCAD.DatabaseServices import OpenMode  # noqa: E402
-from System import Double  # noqa: E402
 
 from c3d_doc import active_civil_doc  # noqa: E402
 
@@ -57,16 +56,30 @@ def find_surface(tr, name: str):
 def point_at_station(alignment_obj, station: float, offset: float = 0.0):
     """Return (easting, northing) on the alignment.
 
-    `Alignment.PointLocation(station, offset, ref easting, ref northing)`
-    is a void .NET method with by-reference outputs. PythonNet requires
-    explicit `clr.Reference[Double]()` placeholders for ref/out parameters
-    — calling with only the value arguments doesn't match any overload
-    and fails at runtime.
+    `Alignment.PointLocation(station, offset, out easting, out northing)`
+    is a void .NET method with two out doubles. PythonNet 3 (the version
+    bundled with Civil 3D 2024 Dynamo) auto-tuples out parameters: call
+    with only the input args and the return value is the tuple of outs.
+
+    The earlier `clr.Reference[Double]()` form works in pythonnet 2.x
+    but raises `AttributeError: module 'clr' has no attribute 'Reference'`
+    in pythonnet 3 (Reference was removed).
+
+    The defensive unpack handles both possible shapes — `(easting,
+    northing)` for a void return and `(None, easting, northing)` if a
+    future pythonnet version starts including the void return slot — and
+    surfaces an informative error otherwise.
     """
-    easting = clr.Reference[Double]()
-    northing = clr.Reference[Double]()
-    alignment_obj.PointLocation(station, offset, easting, northing)
-    return (easting.Value, northing.Value)
+    result = alignment_obj.PointLocation(station, offset)
+    if isinstance(result, tuple):
+        if len(result) == 2:
+            return result
+        if len(result) == 3:
+            return (result[1], result[2])
+    raise RuntimeError(
+        f"Unexpected return from Alignment.PointLocation: "
+        f"type={type(result).__name__}, value={result!r}"
+    )
 
 
 def direction_at_station(alignment_obj, station: float) -> float:
