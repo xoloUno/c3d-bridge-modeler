@@ -50,4 +50,6 @@ test/                  Test parameter files and expected outputs
 
 ## Current Phase
 
-Phase 0: Foundation & Proof of Concept — prove the core pipeline works (read alignment via data shortcuts, generate simple solids, verify xref and Hidden visual style display in viewports).
+**Phase 1: Single-Span Straight Bridge** — model a complete single-span steel girder bridge on a straight alignment. See `scope.md:242` for the deliverables list. First targets: AISC W-shape lookup table, the elevation chain math (top of deck → girder top → bottom of girder → bearing seat → top of cap → top of column → top of footing), and the EG-surface below-grade split.
+
+Phase 0 (foundation & proof-of-concept) is complete and verified — see `MANUAL-TASKS.md` for the verification record. The Phase 0 pipeline (JSON params → 3 `Solid3d` boxes on `BRIDGE-*` layers with xdata) is the baseline Phase 1 builds on.
