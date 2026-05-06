@@ -15,7 +15,6 @@ Dynamo node output:
 """
 import sys
 import os
-import importlib
 
 repo_root = IN[0]                                               # noqa: F821
 params_path = IN[1]                                             # noqa: F821
@@ -24,8 +23,18 @@ src_path = os.path.join(repo_root, "src")
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
 
-# Reload during dev so edits to src/*.py are picked up without restarting Civil 3D.
-import build
-importlib.reload(build)
+# During dev we want every node run to pick up edits across the whole
+# src/ tree. `importlib.reload(build)` only refreshes `build` itself —
+# its already-imported dependencies (`purge`, `solids`, etc.) keep their
+# stale module objects, and `build.purge` still references the old one.
+# Drop every src/ module from sys.modules so the next import is fresh.
+_OWN_MODULES = (
+    "build", "params", "c3d_doc", "alignment",
+    "layers", "solids", "xdata", "purge",
+)
+for _name in _OWN_MODULES:
+    if _name in sys.modules:
+        del sys.modules[_name]
 
+import build
 OUT = build.main(repo_root, params_path)                        # noqa: F821
