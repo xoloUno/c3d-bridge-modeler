@@ -8,7 +8,7 @@ A Dynamo-based parametric bridge modeler that generates 3D AutoCAD solids direct
 
 ## Problem
 
-Autodesk has no native bridge modeling tool for Civil 3D. The current multi-product workflow (InfraWorks → Inventor → Civil 3D) produces models that must be exploded into dumb linework for drawing production — destroying the link between 3D model and 2D deliverables.
+Autodesk has no native bridge modeling tool for Civil 3D. The current multi-product workflow (InfraWorks → Inventor → Civil 3D) produces models that must be exploded into 2D linework for drawing production — destroying the link between 3D model and 2D deliverables.
 
 ## Approach
 
@@ -19,7 +19,7 @@ Autodesk has no native bridge modeling tool for Civil 3D. The current multi-prod
 
 ## Requirements
 
-- Autodesk Civil 3D 2026+
+- Autodesk Civil 3D 2024+
 - Dynamo for Civil 3D (ships with Civil 3D)
 
 ## License
