@@ -56,21 +56,29 @@ def find_surface(tr, name: str):
 def point_at_station(alignment_obj, station: float, offset: float = 0.0):
     """Return (easting, northing) on the alignment.
 
-    `Alignment.PointLocation(station, offset, out easting, out northing)`
-    is a void .NET method with two out doubles. PythonNet 3 (the version
-    bundled with Civil 3D 2024 Dynamo) auto-tuples out parameters: call
-    with only the input args and the return value is the tuple of outs.
+    Empirical pythonnet-3 behavior on Civil 3D 2024 Dynamo:
 
-    The earlier `clr.Reference[Double]()` form works in pythonnet 2.x
-    but raises `AttributeError: module 'clr' has no attribute 'Reference'`
-    in pythonnet 3 (Reference was removed).
+    - `clr.Reference[Double]()` does not exist (pythonnet 2.x pattern).
+    - Calling `PointLocation(station, offset)` with only the two inputs
+      raises `No method matches given arguments for PointLocation:
+      (float, float)`, meaning pythonnet here treats the easting/northing
+      parameters as `ref` (not `out`) and requires placeholder values.
 
-    The defensive unpack handles both possible shapes — `(easting,
-    northing)` for a void return and `(None, easting, northing)` if a
-    future pythonnet version starts including the void return slot — and
-    surfaces an informative error otherwise.
+    Pass 4 args including 0.0 placeholders. PythonNet returns the
+    modified ref values as a tuple (shape varies — for a void-return
+    method with 2 refs it's typically `(easting, northing)`, but if a
+    later runtime adds the void-return slot it'd be `(None, easting,
+    northing)`). Defensive unpack handles both, plus raises an
+    informative error for any other shape.
+
+    Logs the raw return on each call so we can adjust if a future
+    pythonnet version changes the convention.
     """
-    result = alignment_obj.PointLocation(station, offset)
+    result = alignment_obj.PointLocation(station, offset, 0.0, 0.0)
+    print(
+        f"[alignment] PointLocation({station}, {offset}) -> "
+        f"type={type(result).__name__}, value={result!r}"
+    )
     if isinstance(result, tuple):
         if len(result) == 2:
             return result
