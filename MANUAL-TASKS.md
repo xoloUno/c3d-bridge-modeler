@@ -142,6 +142,32 @@ captured in `CLAUDE.md` ("PythonNet 3 quirks worth knowing").
 - [ ] Optional: manually move one sample line in C3D (drag a station
       grip), rerun, confirm the moved line is preserved in place
 
+### Phase 1 edge-of-deck and bridge-CL sub-alignment verification
+- [ ] Bump the reload trigger (already at v4 in committed
+      `src/phase1_node.py`) and rerun the graph
+- [ ] Watch node now contains an additional summary line:
+      `Sub-alignments: created N (BRIDGE-EDGE-L, BRIDGE-EDGE-R, ...),
+      preserved 0 (—)` on first run
+- [ ] In Civil 3D, Toolspace → Prospector → Alignments shows two new
+      alignments: `BRIDGE-EDGE-L` and `BRIDGE-EDGE-R` (siteless),
+      placed on layer `BRIDGE-SKELETON-EDGE`
+- [ ] If your local params have `deck_cl_offset_from_alignment` set to
+      a non-zero value (or array form), a third alignment `BRIDGE-CL`
+      should also appear. With the constant `0.0` default, no
+      `BRIDGE-CL` alignment is created (the existing roadway alignment
+      already serves as the deck centerline).
+- [ ] DIMRADIUS on a bridge edge-of-deck alignment in plan view returns
+      the alignment's radius (would be infinite/N/A for straight
+      Phase 1 alignments; Phase 2 will produce real arc alignments
+      with finite radii).
+- [ ] Re-run the graph: summary now shows
+      `Sub-alignments: created 0 (—), preserved N (...)` —
+      sub-alignments are preserved across runs (designer edits OK).
+- [ ] Optional: edit the `deck_cl_offset_from_alignment` value to
+      something non-zero, delete `BRIDGE-EDGE-L`/`-R` so they get
+      recreated at the shifted positions, re-run, confirm a new
+      `BRIDGE-CL` alignment appears between the two edges.
+
 ## Operational notes for future runs
 
 - **`CTRL-S` the DWG** immediately after a successful Dynamo run.
