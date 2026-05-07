@@ -80,7 +80,7 @@ class SubAlignmentError(RuntimeError):
     pass
 
 
-_MODULE_BANNER = "[sub_alignment] module v3 (introspection + diag) loaded"
+_MODULE_BANNER = "[sub_alignment] module v4 (empty-labelset bypass) loaded"
 print(_MODULE_BANNER)
 
 
@@ -99,29 +99,27 @@ def ensure_phase1_sub_alignments(
     with one of our names exists on the drawing, this function leaves it
     alone (matching the two-mode workflow).
     """
-    print("[sub_alignment] entering ensure_phase1_sub_alignments")
+    print("[sub_alignment] entering ensure_phase1_sub_alignments (v4)")
     layers.ensure_layer(tr, db, SKELETON_LAYER, color=SKELETON_LAYER_COLOR)
 
-    # Resolve style + label set from what's actually present in the drawing,
-    # not hardcoded names. Different C3D templates and locales ship with
-    # different defaults; we pick the first preferred name that exists, or
-    # fall back to whatever the drawing has.
+    # Alignment style: we still resolve from what's in the drawing (Standard
+    # usually exists; if not we take the first available).
     available_styles = _collect_style_names(tr, civ_doc.Styles.AlignmentStyles)
-    available_label_sets = _collect_style_names(
-        tr, civ_doc.Styles.LabelSetStyles.AlignmentLabelSetStyles
-    )
     print(f"[sub_alignment] available alignment styles: {available_styles!r}")
-    print(f"[sub_alignment] available label sets: {available_label_sets!r}")
-
     style_name = _pick_first_available(
         available_styles, PREFERRED_ALIGNMENT_STYLES, kind="AlignmentStyle"
     )
-    label_set_name = _pick_first_available(
-        available_label_sets, PREFERRED_LABEL_SETS, kind="AlignmentLabelSetStyle"
-    )
+
+    # Label set: pass empty string ("") to mirror how `siteName=""` is treated
+    # by Alignment.Create (= no site). The previous slice tried name-based
+    # resolution but Civil 3D's internal name-to-ObjectId lookup rejected
+    # everything we tried; rather than play whack-a-mole with template names,
+    # bypass the lookup entirely.
+    label_set_name = ""
+
     print(
         f"[sub_alignment] using alignment style={style_name!r}, "
-        f"label set={label_set_name!r}"
+        f"label set={label_set_name!r} (empty = no label set)"
     )
 
     # Build vertex lists: one per control point of deck_cl_offset profile,
