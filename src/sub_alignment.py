@@ -13,15 +13,22 @@ the same vertex set with the perpendicular deck width applied at each.
 
 Civil-3D-only. Will not import on macOS.
 
-API references confirmed against Camber (mzjensen/Camber, BSD-3):
+API references confirmed against multiple OSS C# samples (Camber,
+beka-tchigladze/Civil3D-AI-CoPilot, MohamedIbrahim330/Civil3D1st,
+Abhinav-105784/All-Plugins, etc.):
+
     civDb.PolylineOptions
         .AddCurvesBetweenTangents = false
         .EraseExistingEntities = true
         .PlineId = polyline.ObjectId
 
     Alignment.Create(cdoc, polylineOptions, name,
-                     site_name (str, "" for siteless),
-                     layer_name, style_name, label_set_name)
+                     siteId (ObjectId, ObjectId.Null for siteless),
+                     layerId, styleId, labelSetId)
+
+The ObjectId-based overload is used (not the string-name overload) to
+bypass C3D's name-based lookup for label sets, which fails on some
+templates even when names round-trip through the styles collection.
 """
 from __future__ import annotations
 
@@ -33,6 +40,7 @@ clr.AddReference("acdbmgd")
 clr.AddReference("AeccDbMgd")
 
 from Autodesk.AutoCAD.DatabaseServices import (  # noqa: E402
+    ObjectId,
     OpenMode,
     Polyline,
     SymbolUtilityServices,
@@ -60,27 +68,11 @@ NAME_EDGE_RIGHT = "BRIDGE-EDGE-R"
 NAME_BRIDGE_CL = "BRIDGE-CL"
 
 
-# Preferred names per C3D 2024 ship defaults; we fall back to whatever the
-# drawing actually has if these aren't present (templates and locales vary —
-# e.g. some templates only have "Major Minor" / "All Labels" / etc., not
-# "_No Labels"). The actual style + label set used at create time is logged
-# so verification can spot-check it.
-PREFERRED_ALIGNMENT_STYLES = ("Standard", "Basic", "_No Display")
-PREFERRED_LABEL_SETS = (
-    "_No Labels",
-    "_None",
-    "None",
-    "Standard",
-    "Major Minor",
-    "All Labels",
-)
-
-
 class SubAlignmentError(RuntimeError):
     pass
 
 
-_MODULE_BANNER = "[sub_alignment] module v4 (empty-labelset bypass) loaded"
+_MODULE_BANNER = "[sub_alignment] module v5 (ObjectId-based Create) loaded"
 print(_MODULE_BANNER)
 
 
@@ -99,27 +91,22 @@ def ensure_phase1_sub_alignments(
     with one of our names exists on the drawing, this function leaves it
     alone (matching the two-mode workflow).
     """
-    print("[sub_alignment] entering ensure_phase1_sub_alignments (v4)")
-    layers.ensure_layer(tr, db, SKELETON_LAYER, color=SKELETON_LAYER_COLOR)
+    print("[sub_alignment] entering ensure_phase1_sub_alignments (v5)")
+    layer_id = layers.ensure_layer(tr, db, SKELETON_LAYER, color=SKELETON_LAYER_COLOR)
 
-    # Alignment style: we still resolve from what's in the drawing (Standard
-    # usually exists; if not we take the first available).
-    available_styles = _collect_style_names(tr, civ_doc.Styles.AlignmentStyles)
-    print(f"[sub_alignment] available alignment styles: {available_styles!r}")
-    style_name = _pick_first_available(
-        available_styles, PREFERRED_ALIGNMENT_STYLES, kind="AlignmentStyle"
+    # Use the ObjectId-based Alignment.Create overload to bypass string
+    # lookups for site / style / label set. Empirically the name-based
+    # overload's labelSetName lookup fails on some templates even when
+    # the names round-trip through the styles collection.
+    style_id = _first_object_id(civ_doc.Styles.AlignmentStyles, "AlignmentStyle")
+    label_set_id = _first_object_id(
+        civ_doc.Styles.LabelSetStyles.AlignmentLabelSetStyles,
+        "AlignmentLabelSetStyle",
+        allow_null=True,
     )
-
-    # Label set: pass empty string ("") to mirror how `siteName=""` is treated
-    # by Alignment.Create (= no site). The previous slice tried name-based
-    # resolution but Civil 3D's internal name-to-ObjectId lookup rejected
-    # everything we tried; rather than play whack-a-mole with template names,
-    # bypass the lookup entirely.
-    label_set_name = ""
-
     print(
-        f"[sub_alignment] using alignment style={style_name!r}, "
-        f"label set={label_set_name!r} (empty = no label set)"
+        f"[sub_alignment] using style ObjectId={style_id}, "
+        f"label set ObjectId={label_set_id}"
     )
 
     # Build vertex lists: one per control point of deck_cl_offset profile,
@@ -144,11 +131,11 @@ def ensure_phase1_sub_alignments(
 
     _ensure_alignment(
         tr, db, civ_doc, NAME_EDGE_LEFT, left_pts,
-        style_name, label_set_name, created, preserved,
+        layer_id, style_id, label_set_id, created, preserved,
     )
     _ensure_alignment(
         tr, db, civ_doc, NAME_EDGE_RIGHT, right_pts,
-        style_name, label_set_name, created, preserved,
+        layer_id, style_id, label_set_id, created, preserved,
     )
 
     # Bridge CL: only if deck_cl_offset is not effectively zero everywhere
@@ -158,7 +145,7 @@ def ensure_phase1_sub_alignments(
         ]
         _ensure_alignment(
             tr, db, civ_doc, NAME_BRIDGE_CL, cl_pts,
-            style_name, label_set_name, created, preserved,
+            layer_id, style_id, label_set_id, created, preserved,
         )
 
     return {"created": created, "preserved": preserved}
@@ -230,8 +217,9 @@ def _ensure_alignment(
     civ_doc,
     name: str,
     points_xy: List[Tuple[float, float]],
-    style_name: str,
-    label_set_name: str,
+    layer_id,
+    style_id,
+    label_set_id,
     created: list,
     preserved: list,
 ) -> None:
@@ -249,43 +237,35 @@ def _ensure_alignment(
     options.EraseExistingEntities = True
     options.PlineId = pline_id
 
+    # ObjectId-based Create overload — bypasses name-based lookups for site /
+    # layer / style / label set. ObjectId.Null for siteId = siteless.
     alignment_id = Alignment.Create(
         civ_doc,
         options,
         name,
-        "",                          # site name; "" = siteless
-        SKELETON_LAYER,
-        style_name,
-        label_set_name,
+        ObjectId.Null,    # siteId = no site
+        layer_id,
+        style_id,
+        label_set_id,
     )
     created.append((name, alignment_id))
 
 
-def _collect_style_names(tr, id_collection) -> List[str]:
-    names = []
+def _first_object_id(id_collection, kind: str, allow_null: bool = False):
+    """Return the first ObjectId in the collection.
+
+    Civil 3D's `Styles.AlignmentStyles` and
+    `Styles.LabelSetStyles.AlignmentLabelSetStyles` are ObjectIdCollections
+    whose first entry is suitable as a default. When the collection is
+    empty, return `ObjectId.Null` (if allowed) or raise.
+    """
     for oid in id_collection:
-        obj = tr.GetObject(oid, OpenMode.ForRead)
-        # Strip whitespace defensively — some templates ship with names that
-        # have stray leading/trailing spaces, and Alignment.Create's name
-        # lookup is exact-match (a leading space breaks the round-trip).
-        name = obj.Name
-        if isinstance(name, str):
-            name = name.strip()
-        names.append(name)
-    return names
-
-
-def _pick_first_available(
-    available: List[str], preferred: Tuple[str, ...], *, kind: str
-) -> str:
-    if not available:
-        raise SubAlignmentError(
-            f"Drawing has no {kind} entries — cannot create alignment"
-        )
-    for name in preferred:
-        if name in available:
-            return name
-    return available[0]
+        return oid
+    if allow_null:
+        return ObjectId.Null
+    raise SubAlignmentError(
+        f"Drawing has no {kind} entries — cannot create alignment"
+    )
 
 
 def _find_alignment_id_by_name(tr, civ_doc, name: str):
