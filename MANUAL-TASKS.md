@@ -72,6 +72,34 @@ captured in `CLAUDE.md` ("PythonNet 3 quirks worth knowing").
       should be in inches (decimal) and lb/ft. Report any discrepancies
       so we can correct the source data.
 
+### Phase 1 build verification — elevation report (no geometry yet)
+- [ ] Copy `test/params.phase1.example.json` to
+      `test/params.phase1.local.json` and edit it with real alignment,
+      profile, EG, FG names from your reference drawing's data
+      shortcuts. Adjust `begin_station`, `end_station`, `supports[].station`,
+      and `supports[].bearing_offsets` to match the project. Confirm at
+      least one `superstructures[].girder_shape` is a real AISC W-shape
+      (e.g. W36X150) so AISC validation passes.
+- [ ] In Dynamo for Civil 3D, build `src/phase1_bridge.dyn`:
+      - `Directory Path` input → repo root
+      - `File Path` input → `test/params.phase1.local.json`
+      - Python Script node; paste contents of `src/phase1_node.py`;
+        wire `IN[0]` ← repo root, `IN[1]` ← params path
+      - `Watch` node on the Python node's output
+      - Save the graph as `src/phase1_bridge.dyn`
+      - Python node engine MUST be set to CPython 3 (PythonNet 3)
+- [ ] Open the reference Civil 3D drawing with data shortcuts attached
+- [ ] Run the graph; `Watch` node displays the elevation report
+      starting with `== SPAN-1 (... → ...) ==` and listing per-girder
+      `top_deck`, `top_flg`, `bot_grdr`, `brg_seat` at start and end
+      bearings
+- [ ] Cross-check one girder's elevations against a manual calculation
+      (e.g. interior girder G2 at the start bearing): `top_of_deck =
+      profile_elev + deck_profile_offset + cross_slope/100 *
+      |girder_offset - crown_offset|`. Match within 0.01 ft.
+- [ ] Confirm no `BRIDGE-*` layers or geometry are created — this
+      slice is read-only and informational
+
 ## Operational notes for future runs
 
 - **`CTRL-S` the DWG** immediately after a successful Dynamo run.
