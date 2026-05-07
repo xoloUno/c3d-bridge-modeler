@@ -61,6 +61,17 @@ captured in `CLAUDE.md` ("PythonNet 3 quirks worth knowing").
 - [x] Watch node summary on the second run reports
       `Erased 3 prior BRIDGE-* objects. Created 1 deck + 2 piers...`
 
+## Phase 1 verification
+
+### AISC W-shape table spot-check
+- [ ] Open `data/aisc_w_shapes.json` and verify a sample of shape
+      dimensions against AISC Steel Construction Manual (v15 or v16).
+      Suggested sample (covers light, medium, and heavy bridge girder
+      sizes): W14X22, W18X35, W24X62, W30X90, W36X150, W40X167, W44X230.
+      Check `d`, `bf`, `tf`, `tw`, and `lb_per_ft` for each. Values
+      should be in inches (decimal) and lb/ft. Report any discrepancies
+      so we can correct the source data.
+
 ## Operational notes for future runs
 
 - **`CTRL-S` the DWG** immediately after a successful Dynamo run.
