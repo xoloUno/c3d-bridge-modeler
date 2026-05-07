@@ -60,9 +60,20 @@ NAME_EDGE_RIGHT = "BRIDGE-EDGE-R"
 NAME_BRIDGE_CL = "BRIDGE-CL"
 
 
-# Civil 3D 2024 ships these defaults; user template DWG can override later
-DEFAULT_ALIGNMENT_STYLE = "Standard"
-DEFAULT_LABEL_SET = "_No Labels"
+# Preferred names per C3D 2024 ship defaults; we fall back to whatever the
+# drawing actually has if these aren't present (templates and locales vary —
+# e.g. some templates only have "Major Minor" / "All Labels" / etc., not
+# "_No Labels"). The actual style + label set used at create time is logged
+# so verification can spot-check it.
+PREFERRED_ALIGNMENT_STYLES = ("Standard", "Basic", "_No Display")
+PREFERRED_LABEL_SETS = (
+    "_No Labels",
+    "_None",
+    "None",
+    "Standard",
+    "Major Minor",
+    "All Labels",
+)
 
 
 class SubAlignmentError(RuntimeError):
@@ -86,6 +97,17 @@ def ensure_phase1_sub_alignments(
     """
     layers.ensure_layer(tr, db, SKELETON_LAYER, color=SKELETON_LAYER_COLOR)
 
+    # Resolve style + label set from what's actually present in the drawing,
+    # not hardcoded names. Different C3D templates and locales ship with
+    # different defaults; we pick the first preferred name that exists, or
+    # fall back to whatever the drawing has.
+    style_name = _resolve_alignment_style_name(tr, civ_doc)
+    label_set_name = _resolve_label_set_name(tr, civ_doc)
+    print(
+        f"[sub_alignment] using alignment style={style_name!r}, "
+        f"label set={label_set_name!r}"
+    )
+
     # Build vertex lists: one per control point of deck_cl_offset profile,
     # plus the start and end bearing stations as outer endpoints. For the
     # "constant zero" case we need just the two outer endpoints.
@@ -107,10 +129,12 @@ def ensure_phase1_sub_alignments(
     preserved: List[Tuple[str, object]] = []
 
     _ensure_alignment(
-        tr, db, civ_doc, NAME_EDGE_LEFT, left_pts, created, preserved
+        tr, db, civ_doc, NAME_EDGE_LEFT, left_pts,
+        style_name, label_set_name, created, preserved,
     )
     _ensure_alignment(
-        tr, db, civ_doc, NAME_EDGE_RIGHT, right_pts, created, preserved
+        tr, db, civ_doc, NAME_EDGE_RIGHT, right_pts,
+        style_name, label_set_name, created, preserved,
     )
 
     # Bridge CL: only if deck_cl_offset is not effectively zero everywhere
@@ -119,7 +143,8 @@ def ensure_phase1_sub_alignments(
             _point_at(alignment_obj, s, deck_cl_at(s)) for s in vertex_stations
         ]
         _ensure_alignment(
-            tr, db, civ_doc, NAME_BRIDGE_CL, cl_pts, created, preserved
+            tr, db, civ_doc, NAME_BRIDGE_CL, cl_pts,
+            style_name, label_set_name, created, preserved,
         )
 
     return {"created": created, "preserved": preserved}
@@ -191,6 +216,8 @@ def _ensure_alignment(
     civ_doc,
     name: str,
     points_xy: List[Tuple[float, float]],
+    style_name: str,
+    label_set_name: str,
     created: list,
     preserved: list,
 ) -> None:
@@ -214,10 +241,64 @@ def _ensure_alignment(
         name,
         "",                          # site name; "" = siteless
         SKELETON_LAYER,
-        DEFAULT_ALIGNMENT_STYLE,
-        DEFAULT_LABEL_SET,
+        style_name,
+        label_set_name,
     )
     created.append((name, alignment_id))
+
+
+def _resolve_alignment_style_name(tr, civ_doc) -> str:
+    """Find a usable AlignmentStyle name in the drawing.
+
+    Try preferred names first; otherwise return the name of the first
+    available style. Raise if no styles exist (very unusual — Civil 3D
+    templates ship with at least one).
+    """
+    available = _collect_style_names(tr, civ_doc.Styles.AlignmentStyles)
+    return _pick_first_available(
+        available,
+        PREFERRED_ALIGNMENT_STYLES,
+        kind="AlignmentStyle",
+    )
+
+
+def _resolve_label_set_name(tr, civ_doc) -> str:
+    """Find a usable Alignment label-set style name in the drawing.
+
+    Civil 3D 2024 exposes alignment label sets at
+    `civDoc.Styles.LabelSetStyles.AlignmentLabelSetStyles` (an
+    ObjectIdCollection of label-set-style objects). Different templates ship
+    with different default names — `_No Labels`, `Major Minor`, etc. — so
+    we introspect rather than hardcode.
+    """
+    label_sets = civ_doc.Styles.LabelSetStyles.AlignmentLabelSetStyles
+    available = _collect_style_names(tr, label_sets)
+    return _pick_first_available(
+        available,
+        PREFERRED_LABEL_SETS,
+        kind="AlignmentLabelSetStyle",
+    )
+
+
+def _collect_style_names(tr, id_collection) -> List[str]:
+    names = []
+    for oid in id_collection:
+        obj = tr.GetObject(oid, OpenMode.ForRead)
+        names.append(obj.Name)
+    return names
+
+
+def _pick_first_available(
+    available: List[str], preferred: Tuple[str, ...], *, kind: str
+) -> str:
+    if not available:
+        raise SubAlignmentError(
+            f"Drawing has no {kind} entries — cannot create alignment"
+        )
+    for name in preferred:
+        if name in available:
+            return name
+    return available[0]
 
 
 def _find_alignment_id_by_name(tr, civ_doc, name: str):
