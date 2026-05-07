@@ -17,6 +17,8 @@ pytest test/
 - `test_params.py` — covers `src/params.py` parsing and validation.
 - `test_units.py` — covers `src/units.py` inch / foot / mm helpers.
 - `test_aisc.py` — covers `src/aisc.py` W-shape table loading and lookup.
+- `test_elevation.py` — covers `src/elevation.py` bridge elevation chain
+  (top of deck → girder → bearing seat → cap → column → footing).
 - `params.phase0.json` — committed schema example with placeholder
   alignment / profile / surface names. Used by the unit tests; do not
   edit. New contributors copy this file to create their local config
