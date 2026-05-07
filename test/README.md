@@ -1,9 +1,10 @@
 # Tests
 
 Pure-logic tests run on macOS; Civil-3D-API modules (`c3d_doc.py`,
-`alignment.py`, `layers.py`, `solids.py`, `xdata.py`, `purge.py`) cannot be
-imported off Windows and are not covered here. They are exercised manually
-via the checklist in `MANUAL-TASKS.md`.
+`alignment.py`, `layers.py`, `solids.py`, `xdata.py`, `purge.py`,
+`build.py`, `phase1_build.py`) cannot be imported off Windows and are not
+covered here. They are exercised manually via the checklist in
+`MANUAL-TASKS.md`.
 
 ## Run
 
