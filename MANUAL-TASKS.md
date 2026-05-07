@@ -100,6 +100,28 @@ captured in `CLAUDE.md` ("PythonNet 3 quirks worth knowing").
 - [ ] Confirm no `BRIDGE-*` layers or geometry are created — this
       slice is read-only and informational
 
+### Phase 1 sample-line skeleton verification
+- [ ] Bump the reload trigger in the Python node body (already at v2
+      in committed `src/phase1_node.py`) and rerun the graph
+- [ ] Watch node summary first line reads
+      `Skeleton: created N sample line(s), preserved 0 existing`
+      where N matches the number of supports in your local params
+- [ ] In Civil 3D, `LIST` or Properties panel shows a Sample Line
+      Group named `BRIDGE-SUPPORTS` parented to your bridge alignment
+- [ ] Each sample line is named after its `support_id` (e.g. `ABUT-A`,
+      `ABUT-B`); positions match support stations on the alignment
+- [ ] Sample lines are skewed by `support.skew_angle` from
+      perpendicular (verify visually if non-zero skew; otherwise the
+      lines are square to the alignment)
+- [ ] Sample line length = deck width + 2 ft (1 ft overhang on each
+      side); for a 22 ft deck the sample lines are 24 ft total
+- [ ] Re-run the graph: summary now reads
+      `Skeleton: created 0 sample line(s), preserved N existing` —
+      confirms the skeleton is preserved across runs (designer edits
+      will not be overwritten)
+- [ ] Optional: manually move one sample line in C3D (drag a station
+      grip), rerun, confirm the moved line is preserved in place
+
 ## Operational notes for future runs
 
 - **`CTRL-S` the DWG** immediately after a successful Dynamo run.
