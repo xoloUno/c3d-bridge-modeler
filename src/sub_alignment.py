@@ -39,6 +39,8 @@ import clr
 clr.AddReference("acdbmgd")
 clr.AddReference("AeccDbMgd")
 
+from System import String  # noqa: E402
+
 from Autodesk.AutoCAD.DatabaseServices import (  # noqa: E402
     ObjectId,
     OpenMode,
@@ -46,6 +48,7 @@ from Autodesk.AutoCAD.DatabaseServices import (  # noqa: E402
     SymbolUtilityServices,
 )
 from Autodesk.AutoCAD.Geometry import Point2d  # noqa: E402
+from Autodesk.Civil.ApplicationServices import CivilDocument  # noqa: E402
 from Autodesk.Civil.DatabaseServices import (  # noqa: E402
     Alignment,
     PolylineOptions,
@@ -53,6 +56,18 @@ from Autodesk.Civil.DatabaseServices import (  # noqa: E402
 
 import alignment as al
 import layers
+
+
+# pythonnet 3 doesn't reliably disambiguate the two 7-arg
+# `Alignment.Create(..., PolylineOptions, ...)` overloads — one takes
+# ObjectIds, the other takes strings, both with 7 positional args. When
+# we passed ObjectIds, pythonnet was dispatching to the string overload
+# (which then failed name lookup for our label set). Pin the ObjectId
+# overload explicitly via `.Overloads[...]`.
+_ALIGNMENT_CREATE_OBJECTID_OVERLOAD = Alignment.Create.Overloads[
+    CivilDocument, PolylineOptions, String,
+    ObjectId, ObjectId, ObjectId, ObjectId,
+]
 
 
 # Layer for all bridge skeleton sub-alignments (edges + CL); kept as one
@@ -72,7 +87,7 @@ class SubAlignmentError(RuntimeError):
     pass
 
 
-_MODULE_BANNER = "[sub_alignment] module v5 (ObjectId-based Create) loaded"
+_MODULE_BANNER = "[sub_alignment] module v6 (.Overloads[]-pinned ObjectId Create) loaded"
 print(_MODULE_BANNER)
 
 
@@ -238,8 +253,10 @@ def _ensure_alignment(
     options.PlineId = pline_id
 
     # ObjectId-based Create overload — bypasses name-based lookups for site /
-    # layer / style / label set. ObjectId.Null for siteId = siteless.
-    alignment_id = Alignment.Create(
+    # layer / style / label set. ObjectId.Null for siteId = siteless. The
+    # `.Overloads[...]` pin is required: pythonnet 3 was otherwise dispatching
+    # to the (string-based) sibling overload and rejecting the ObjectIds.
+    alignment_id = _ALIGNMENT_CREATE_OBJECTID_OVERLOAD(
         civ_doc,
         options,
         name,
