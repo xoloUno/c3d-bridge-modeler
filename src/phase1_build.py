@@ -93,6 +93,9 @@ def _run(params_path: str) -> str:
                 alignment_obj=alignment_obj,
                 supports=params.supports,
                 deck_widths_by_support_id=skeleton.deck_widths_by_support_id(result),
+                deck_cl_offsets_by_support_id=skeleton.deck_cl_offsets_by_support_id(
+                    params, result
+                ),
             )
             skeleton_summary = (
                 f"Skeleton: created {len(sk['created'])} sample line(s), "

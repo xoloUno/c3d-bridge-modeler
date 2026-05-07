@@ -53,6 +53,7 @@ def ensure_support_sample_lines(
     alignment_obj,
     supports,
     deck_widths_by_support_id: dict,
+    deck_cl_offsets_by_support_id: dict,
     group_name: str = SAMPLE_LINE_GROUP_NAME,
     overhang_ft: float = DEFAULT_OVERHANG_FT,
 ) -> dict:
@@ -67,6 +68,14 @@ def ensure_support_sample_lines(
     no-op for the existing entries — the designer's manual edits are kept.
     Per-support naming uses `support.support_id`, so adding a new support to
     JSON between runs causes only the new sample line to be created.
+
+    `deck_widths_by_support_id` carries the along-bearing length of the
+    bearing line at each support (`perpendicular_deck_width / cos(skew)`).
+    `deck_cl_offsets_by_support_id` carries the signed deck-CL-from-alignment
+    offset at each support (sampled at the bearing station; +ve = right of
+    alignment). When non-zero, sample lines extend asymmetrically from the
+    alignment crossing — more reach on the deck-far side, less on the
+    alignment-near side — so the line lands flush with both deck edges.
     """
     existing_group_id = _find_group_by_name(tr, alignment_obj, group_name)
     if existing_group_id is None:
@@ -89,13 +98,15 @@ def ensure_support_sample_lines(
             raise SkeletonError(
                 f"deck width for support {support.support_id!r} not provided"
             )
-        half_length = deck_width / 2.0 + overhang_ft
+        deck_cl_offset = deck_cl_offsets_by_support_id.get(support.support_id, 0.0)
 
         endpoints = _skewed_endpoints(
             alignment_obj=alignment_obj,
             station=support.station,
             skew_deg=support.skew_angle,
-            half_length=half_length,
+            deck_width_along_bearing=deck_width,
+            deck_cl_offset=deck_cl_offset,
+            overhang_ft=overhang_ft,
         )
         points = Point2dCollection()
         for x, y in endpoints:
@@ -129,9 +140,29 @@ def _skewed_endpoints(
     alignment_obj,
     station: float,
     skew_deg: float,
-    half_length: float,
+    deck_width_along_bearing: float,
+    deck_cl_offset: float,
+    overhang_ft: float,
 ) -> List[tuple]:
     """Return [(x_left, y_left), (x_right, y_right)] for a sample line.
+
+    Per-side along-bearing displacement from the alignment crossing
+    (positive sign = toward right of alignment):
+
+        LEFT  = deck_cl_offset / cos(skew) − deck_width_along_bearing/2 − overhang_ft
+        RIGHT = deck_cl_offset / cos(skew) + deck_width_along_bearing/2 + overhang_ft
+
+    `deck_width_along_bearing` is the bearing-line length
+    (`perpendicular_deck_width / cos(skew)`). `deck_cl_offset` is the signed
+    perpendicular distance from the alignment to the deck centerline at the
+    support's bearing station (+ve = right of alignment). `deck_cl_offset /
+    cos(skew)` is the along-bearing shift of the deck CL crossing from the
+    alignment crossing, so the LEFT/RIGHT endpoints land flush with the
+    deck edges plus `overhang_ft` (along-bearing) on either side.
+
+    Equivalence: when `deck_cl_offset == 0`, LEFT = −half_length and RIGHT
+    = +half_length where half_length = deck_width/2 + overhang_ft —
+    bit-identical to the prior symmetric formula at any skew.
 
     Skew sign convention: 0 deg = perpendicular to alignment. Positive skew
     rotates the sample line CCW (as seen from above) from the perpendicular,
@@ -140,13 +171,22 @@ def _skewed_endpoints(
     cx, cy = al.point_at_station(alignment_obj, station, 0.0)
     alignment_dir_rad = al.direction_at_station(alignment_obj, station)
     skew_rad = math.radians(skew_deg)
+    cos_skew = math.cos(skew_rad)
     perp_left_dir = alignment_dir_rad + math.pi / 2.0 + skew_rad
 
-    dx = half_length * math.cos(perp_left_dir)
-    dy = half_length * math.sin(perp_left_dir)
-    left = (cx + dx, cy + dy)
-    right = (cx - dx, cy - dy)
-    return [left, right]
+    half_brg = deck_width_along_bearing / 2.0
+    shift_along = deck_cl_offset / cos_skew
+    along_left = shift_along - half_brg - overhang_ft
+    along_right = shift_along + half_brg + overhang_ft
+
+    # perp_left_dir points to the LEFT of alignment along the skewed bearing
+    # line, so we negate the right-positive along-bearing distances.
+    return [
+        (cx - along_left * math.cos(perp_left_dir),
+         cy - along_left * math.sin(perp_left_dir)),
+        (cx - along_right * math.cos(perp_left_dir),
+         cy - along_right * math.sin(perp_left_dir)),
+    ]
 
 
 def deck_widths_by_support_id(compute_result) -> dict:
@@ -170,3 +210,20 @@ def deck_widths_by_support_id(compute_result) -> dict:
         ):
             widths[sid] = max(widths.get(sid, 0.0), w)
     return widths
+
+
+def deck_cl_offsets_by_support_id(params, compute_result) -> dict:
+    """Build {support_id: deck_cl_offset_at_bearing_station_ft}.
+
+    Sampled at each support's bearing station (matching how `bridge_lines`
+    and the elevation chain evaluate the station-varying deck CL offset),
+    so the sample line's asymmetric extension stays consistent with the
+    edge-of-deck polylines created at the same support.
+    """
+    offsets = {}
+    for span in compute_result.spans:
+        for endpt in (span.girders[0].start, span.girders[0].end):
+            offsets[endpt.support_id] = params.deck_cl_offset_from_alignment.at(
+                endpt.bearing_station
+            )
+    return offsets
