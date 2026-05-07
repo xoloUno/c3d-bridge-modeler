@@ -181,6 +181,27 @@ contents listed below.
 - [ ] Optional: manually move one sample line in C3D (drag a station
       grip), rerun, confirm the moved line is preserved in place
 
+### Phase 1 sample-line asymmetric extension for offset deck CL — VERIFIED 2026-05-07
+- [x] In `test/params.phase1.local.json`, set
+      `deck_cl_offset_from_alignment` to a non-zero scalar (e.g.
+      `5.0`).
+- [x] In Civil 3D, manually delete the existing `BRIDGE-SUPPORTS`
+      sample lines (and the `BRIDGE-EDGE-L`/`-R`/`-CL` polylines so
+      they regenerate at the shifted positions). The find-by-name
+      logic preserves existing sample lines across runs, so the
+      manual delete is required to pick up the new asymmetric
+      formula.
+- [x] Bump the reload trigger in the Python node and re-run the graph.
+- [x] Each sample line now extends asymmetrically from the alignment
+      crossing: more reach on the deck-far side (right of alignment
+      for `+5` ft offset), less on the alignment-near side. The
+      sample line endpoints land flush with the deck edges
+      (+ 1 ft overhang each side); the alignment-crossing station
+      grip remains at the alignment intersection.
+- [x] Visually confirm the sample line endpoints coincide with the
+      `BRIDGE-EDGE-L` and `BRIDGE-EDGE-R` polylines (offset by the
+      1 ft along-bearing overhang) at each support.
+
 ### Phase 1 edge-of-deck and bridge-CL polyline verification
 - [ ] Bump the reload trigger (committed file is at v10) and rerun
       the graph
