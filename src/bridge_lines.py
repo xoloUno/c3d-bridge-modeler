@@ -1,4 +1,6 @@
-"""Bridge reference-line creation in Civil 3D.
+"""bridge_lines.py module v2 — inline layer plot/lock setup.
+
+Bridge reference-line creation in Civil 3D.
 
 For Phase 1 the tool creates plain AutoCAD `Polyline` entities for
 edge-of-deck (left + right) and — when `deck_cl_offset_from_alignment`
@@ -87,13 +89,13 @@ def ensure_phase1_bridge_lines(
     names exists in the drawing, this function leaves it alone (matching
     the two-mode workflow).
     """
-    print("[bridge_lines] entering ensure_phase1_bridge_lines")
-    layers.ensure_layer(
-        tr, db, NOPLOT_LAYER,
-        color=NOPLOT_LAYER_COLOR,
-        plottable=False,
-        locked=True,
-    )
+    print("[bridge_lines] entering ensure_phase1_bridge_lines (v2)")
+    # Use the original-signature ensure_layer (color only) so we don't
+    # depend on a fresh layers.py reload — empirically OneDrive + Python's
+    # __pycache__ can leave stale .pyc files even after a clean git pull.
+    # Set IsPlottable / IsLocked directly on the LayerTableRecord here.
+    layer_id = layers.ensure_layer(tr, db, NOPLOT_LAYER, color=NOPLOT_LAYER_COLOR)
+    _set_layer_plot_and_lock(tr, layer_id, plottable=False, locked=True)
     xdata.ensure_regapp(tr, db, XDATA_APP)
 
     # Vertex stations: bearing-line endpoints + any internal control
@@ -129,6 +131,19 @@ def ensure_phase1_bridge_lines(
 # ----------------------------------------------------------------------
 # Internals
 # ----------------------------------------------------------------------
+
+def _set_layer_plot_and_lock(tr, layer_id, *, plottable: bool, locked: bool) -> None:
+    """Reconcile the IsPlottable / IsLocked flags on a LayerTableRecord."""
+    rec = tr.GetObject(layer_id, OpenMode.ForRead)
+    needs_plot = bool(rec.IsPlottable) != bool(plottable)
+    needs_lock = bool(rec.IsLocked) != bool(locked)
+    if not (needs_plot or needs_lock):
+        return
+    rec.UpgradeOpen()
+    if needs_plot:
+        rec.IsPlottable = plottable
+    if needs_lock:
+        rec.IsLocked = locked
 
 def _vertex_stations(params, compute_result) -> List[float]:
     """Sorted stations defining the bridge polyline.
