@@ -31,6 +31,7 @@ import phase1_compute
 import aisc
 import c3d_doc
 import alignment as al
+import skeleton
 
 
 def main(repo_root: str, params_path: str) -> str:
@@ -64,6 +65,7 @@ def _run(params_path: str) -> str:
     if aisc_errors:
         return "ERROR: AISC validation failed:\n  " + "\n  ".join(aisc_errors)
 
+    skeleton_summary = ""
     with c3d_doc.locked_document():
         with c3d_doc.transaction() as tr:
             print(f"[phase1_build] resolving alignment {params.alignment_name!r}")
@@ -77,7 +79,20 @@ def _run(params_path: str) -> str:
             print("[phase1_build] running compute()")
             result = phase1_compute.compute(params, aisc_table, profile_at)
 
-            tr.Commit()  # read-only, but commit + dispose is the canonical pattern
+            print("[phase1_build] ensuring sample-line skeleton at supports")
+            sk = skeleton.ensure_support_sample_lines(
+                tr=tr,
+                alignment_obj=alignment_obj,
+                supports=params.supports,
+                deck_widths_by_support_id=skeleton.deck_widths_by_support_id(result),
+            )
+            skeleton_summary = (
+                f"Skeleton: created {len(sk['created'])} sample line(s), "
+                f"preserved {len(sk['preserved'])} existing"
+            )
+            print(f"[phase1_build] {skeleton_summary}")
+
+            tr.Commit()
 
     report = phase1_compute.format_text_report(result)
     # Mirror to console so the full table is copyable from the Background
@@ -85,4 +100,4 @@ def _run(params_path: str) -> str:
     print("[phase1_build] elevation report:")
     for line in report.splitlines():
         print(f"[phase1_build] {line}")
-    return report
+    return f"{skeleton_summary}\n\n{report}"
