@@ -1,0 +1,69 @@
+{
+  "alignment_name": "EXAMPLE-ALIGNMENT",
+  "profile_name": "EXAMPLE-PROFILE",
+  "eg_surface_name": "EXAMPLE-EG",
+  "fg_surface_name": "EXAMPLE-FG",
+  "template_dwg": "templates/bridge_template.dwg",
+
+  "begin_station": 1000.0,
+  "end_station": 1200.0,
+  "begin_skew_angle": 0.0,
+  "end_skew_angle": 0.0,
+
+  "deck_cross_slope_left": -2.0,
+  "deck_cross_slope_right": -2.0,
+  "crown_offset": 0.0,
+  "deck_profile_offset": -0.25,
+  "follow_superelevation": false,
+
+  "supports": [
+    {
+      "support_id": "ABUT-A",
+      "support_type": "ABUTMENT_SEAT",
+      "station": 1000.0,
+      "skew_angle": 0.0,
+      "offset": 0.0,
+      "bearing_offsets": [1.0]
+    },
+    {
+      "support_id": "ABUT-B",
+      "support_type": "ABUTMENT_SEAT",
+      "station": 1200.0,
+      "skew_angle": 0.0,
+      "offset": 0.0,
+      "bearing_offsets": [-1.0]
+    }
+  ],
+
+  "spans": [
+    {
+      "span_id": "SPAN-1",
+      "start_support_id": "ABUT-A",
+      "end_support_id": "ABUT-B"
+    }
+  ],
+
+  "superstructures": [
+    {
+      "girder_type": "W_SHAPE",
+      "girder_shape": "W36X150",
+      "girder_count": 4,
+      "girder_spacing_mode": "EQUAL",
+
+      "left_edge_to_G1_start": 3.0,
+      "girder_spacings_start": [8.0, 8.0, 8.0],
+      "Gn_to_right_edge_start": 3.0,
+
+      "left_edge_to_G1_end": 3.0,
+      "girder_spacings_end": [8.0, 8.0, 8.0],
+      "Gn_to_right_edge_end": 3.0,
+
+      "girder_geometry": "STRAIGHT",
+      "deck_depth": 0.667,
+      "haunch_depth": 0.0833,
+      "haunch_width_mode": "MATCH_TOP_FLANGE",
+      "topping_depth": 0.0,
+      "end_diaphragm": true
+    }
+  ]
+}

@@ -19,10 +19,16 @@ pytest test/
 - `test_aisc.py` — covers `src/aisc.py` W-shape table loading and lookup.
 - `test_elevation.py` — covers `src/elevation.py` bridge elevation chain
   (top of deck → girder → bearing seat → cap → column → footing).
+- `test_phase1_params.py` — covers `src/phase1_params.py` Phase 1
+  parameter parsing, validation, AISC cross-check, and girder-offset
+  helpers.
 - `params.phase0.json` — committed schema example with placeholder
   alignment / profile / surface names. Used by the unit tests; do not
   edit. New contributors copy this file to create their local config
   (see below).
+- `params.phase1.example.json` — Phase 1 schema example (W36X150
+  girder, 4-girder symmetric deck, single span, two abutments).
+  Used by the unit tests.
 - `params.local.json` (gitignored) — your project's real config with
   actual data-shortcut names. Point your Dynamo `File Path` node at
   this file. `*.local.json` patterns are gitignored so a `git pull`
