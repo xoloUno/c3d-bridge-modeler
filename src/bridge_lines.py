@@ -1,4 +1,4 @@
-"""bridge_lines.py module v2 — inline layer plot/lock setup.
+"""bridge_lines.py module v3 — skewed-bearing endpoint geometry.
 
 Bridge reference-line creation in Civil 3D.
 
@@ -35,6 +35,7 @@ Civil-3D-only. Will not import on macOS.
 """
 from __future__ import annotations
 
+import math
 from typing import List, Optional, Tuple
 
 import clr
@@ -89,7 +90,7 @@ def ensure_phase1_bridge_lines(
     names exists in the drawing, this function leaves it alone (matching
     the two-mode workflow).
     """
-    print("[bridge_lines] entering ensure_phase1_bridge_lines (v2)")
+    print("[bridge_lines] entering ensure_phase1_bridge_lines (v3)")
     # Use the original-signature ensure_layer (color only) so we don't
     # depend on a fresh layers.py reload — empirically OneDrive + Python's
     # __pycache__ can leave stale .pyc files even after a clean git pull.
@@ -98,19 +99,26 @@ def ensure_phase1_bridge_lines(
     _set_layer_plot_and_lock(tr, layer_id, plottable=False, locked=True)
     xdata.ensure_regapp(tr, db, XDATA_APP)
 
-    # Vertex stations: bearing-line endpoints + any internal control
-    # points of the deck_cl_offset profile.
-    vertex_stations = _vertex_stations(params, compute_result)
+    # Vertex specs: (station, skew_angle_deg) for each polyline vertex. At
+    # the start/end bearing stations the polyline's edge points must land on
+    # the SKEWED bearing line, not at the perpendicular offset at the
+    # bearing-station alignment crossing — otherwise the deck edge polyline
+    # ignores the supports' skew and renders as if the bearings were square.
+    vertex_specs = _vertex_specs(params, compute_result)
     width_at = _width_at_station_fn(compute_result)
     deck_cl_at = params.deck_cl_offset_from_alignment.at
 
     left_pts = [
-        _point_at(alignment_obj, s, deck_cl_at(s) - width_at(s) / 2.0)
-        for s in vertex_stations
+        _point_on_skewed_bearing(
+            alignment_obj, sta, skew, deck_cl_at(sta) - width_at(sta) / 2.0
+        )
+        for sta, skew in vertex_specs
     ]
     right_pts = [
-        _point_at(alignment_obj, s, deck_cl_at(s) + width_at(s) / 2.0)
-        for s in vertex_stations
+        _point_on_skewed_bearing(
+            alignment_obj, sta, skew, deck_cl_at(sta) + width_at(sta) / 2.0
+        )
+        for sta, skew in vertex_specs
     ]
 
     created: List[Tuple[str, object]] = []
@@ -120,8 +128,11 @@ def ensure_phase1_bridge_lines(
     _ensure_polyline(tr, db, NAME_EDGE_RIGHT, right_pts, created, preserved)
 
     if not params.deck_cl_offset_from_alignment.is_effectively_constant_zero():
+        # Bridge CL is along the alignment direction at deck CL (no skew —
+        # it's a longitudinal line, not a bearing line).
         cl_pts = [
-            _point_at(alignment_obj, s, deck_cl_at(s)) for s in vertex_stations
+            _point_on_skewed_bearing(alignment_obj, sta, skew, deck_cl_at(sta))
+            for sta, skew in vertex_specs
         ]
         _ensure_polyline(tr, db, NAME_BRIDGE_CL, cl_pts, created, preserved)
 
@@ -145,12 +156,15 @@ def _set_layer_plot_and_lock(tr, layer_id, *, plottable: bool, locked: bool) -> 
     if needs_lock:
         rec.IsLocked = locked
 
-def _vertex_stations(params, compute_result) -> List[float]:
-    """Sorted stations defining the bridge polyline.
+def _vertex_specs(params, compute_result) -> List[Tuple[float, float]]:
+    """Return sorted [(station, skew_deg), ...] for each polyline vertex.
 
-    Always includes start and end bearing stations from the (single,
-    Phase 1) span, plus any internal control points of
-    `deck_cl_offset_from_alignment` strictly inside the bearing range.
+    Always includes:
+      - start bearing station with start support's skew angle
+      - end bearing station with end support's skew angle
+    Optionally includes internal control points of
+    `deck_cl_offset_from_alignment` (strictly inside the bearing range)
+    with skew_deg = 0 (no support there → no bearing-line skew applies).
     """
     if not compute_result.spans:
         raise BridgeLineError("compute_result has no spans")
@@ -164,11 +178,19 @@ def _vertex_stations(params, compute_result) -> List[float]:
     s_begin = g0.start.bearing_station
     s_end = g0.end.bearing_station
 
-    stations = [s_begin, s_end]
+    supports_by_id = {s.support_id: s for s in params.supports}
+    start_support = supports_by_id[span.start_support_id]
+    end_support = supports_by_id[span.end_support_id]
+
+    specs: List[Tuple[float, float]] = [
+        (s_begin, start_support.skew_angle),
+        (s_end, end_support.skew_angle),
+    ]
     for s, _v in params.deck_cl_offset_from_alignment.points:
         if s_begin < s < s_end:
-            stations.append(s)
-    return sorted(stations)
+            specs.append((s, 0.0))
+    specs.sort(key=lambda spec: spec[0])
+    return specs
 
 
 def _width_at_station_fn(compute_result):
@@ -192,8 +214,42 @@ def _width_at_station_fn(compute_result):
     return _at
 
 
-def _point_at(alignment_obj, station: float, offset: float) -> Tuple[float, float]:
-    return al.point_at_station(alignment_obj, station, offset)
+def _point_on_skewed_bearing(
+    alignment_obj,
+    station: float,
+    skew_deg: float,
+    perp_offset: float,
+) -> Tuple[float, float]:
+    """XY of the point at perpendicular offset `perp_offset` from alignment,
+    *on the bearing line* skewed by `skew_deg` (CCW from perpendicular).
+
+    For zero skew, equivalent to `alignment.PointLocation(station, perp_offset)`.
+    For non-zero skew, the point shifts along the alignment direction by
+    `perp_offset × tan(skew_deg)` so that the chord from the alignment
+    crossing to the point lies on the skewed bearing line — matching the
+    skewed sample line endpoint that downstream geometry (deck slab,
+    abutment back of backwall) lines up with.
+
+    Sign convention matches Civil 3D's `PointLocation`: `+perp_offset` is
+    right of alignment when looking ahead-station, `-perp_offset` is left.
+    """
+    if skew_deg == 0.0:
+        return al.point_at_station(alignment_obj, station, perp_offset)
+
+    cx, cy = al.point_at_station(alignment_obj, station, 0.0)
+    alignment_dir_rad = al.direction_at_station(alignment_obj, station)
+    skew_rad = math.radians(skew_deg)
+    # `perp_left_dir` is the direction of the skewed bearing line going
+    # toward the LEFT side of alignment (math convention: +Y when alignment
+    # heads +X). For a point at C3D `+perp_offset` (right side), we go
+    # the opposite distance along this direction; the formula
+    # `L = -perp_offset / cos(skew)` handles both signs correctly.
+    perp_left_dir = alignment_dir_rad + math.pi / 2.0 + skew_rad
+    L = -perp_offset / math.cos(skew_rad)
+    return (
+        cx + L * math.cos(perp_left_dir),
+        cy + L * math.sin(perp_left_dir),
+    )
 
 
 def _ensure_polyline(
