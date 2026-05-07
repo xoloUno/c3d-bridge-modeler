@@ -44,7 +44,7 @@ See `docs/scope.md` for the full project scope, parameter definitions, phased de
 - ~20 unnumbered component-level layers (e.g., `BRIDGE-GIRDER`, `BRIDGE-PIER-COL`); per-element identity stored as xdata
 - Below-grade elements split at EG surface elevation: above-grade on standard layer, below-grade on `-BELOW` layer with DASHED linetype
 - Footings are exclusively below grade and do not need splitting
-- Re-run behavior: delete all `BRIDGE-*` layer objects, regenerate from parameters
+- Re-run behavior (two-mode workflow): **skeleton elements** (sample lines, edge/CL reference polylines, future top-of-deck surfaces) are **preserved** across runs — designers can move/edit them and the tool reads positions back. **Solid geometry** (deck, girders, haunches, substructure) is **regenerated each run** from current params + skeleton positions. Idempotency uses xdata tags or sample-line group / alignment names for find-or-create.
 
 ## File Structure
 
@@ -65,6 +65,25 @@ test/                  Test parameter files and expected outputs
 
 ## Current Phase
 
-**Phase 1: Single-Span Straight Bridge** — model a complete single-span steel girder bridge on a straight alignment. See `scope.md:242` for the deliverables list. First targets: AISC W-shape lookup table, the elevation chain math (top of deck → girder top → bottom of girder → bearing seat → top of cap → top of column → top of footing), and the EG-surface below-grade split.
+**Phase 1: Single-Span Straight Bridge** — model a complete single-span steel girder bridge on a straight alignment. See `scope.md` Phase 1 section for the full deliverables list.
 
-Phase 0 (foundation & proof-of-concept) is complete and verified — see `MANUAL-TASKS.md` for the verification record. The Phase 0 pipeline (JSON params → 3 `Solid3d` boxes on `BRIDGE-*` layers with xdata) is the baseline Phase 1 builds on.
+### Done (Phase 1, pure-math + skeleton)
+- AISC W-shape lookup table (`data/aisc_w_shapes.json`, 266 W10–W44 shapes; sourced from steelpy, Apache-2.0; spot-check task in `MANUAL-TASKS.md`)
+- Pure-math elevation chain (`src/elevation.py`) — top of deck → girder flange → bottom of girder → bearing seat → top of cap → top of column → top of footing
+- Phase 1 params schema (`src/phase1_params.py`) — global, supports, spans, superstructures, with exactly-one-of edge-spacing rule and station-varying `crown_offset` / `deck_cl_offset_from_alignment` profiles
+- End-to-end compute orchestrator (`src/phase1_compute.py`) — skew correction, deck-CL offset shift, per-girder per-bearing-line elevations, formatted text report
+- Sample-line skeleton at supports (`src/skeleton.py`) — `BRIDGE-SUPPORTS` group, idempotent across runs
+- Edge-of-deck + bridge-CL reference polylines (`src/bridge_lines.py`) — `BRIDGE-NOPLOT` layer (locked + non-plotting), skewed bearing endpoint geometry, anchored at support stations
+- 101 macOS unit tests covering the pure-logic layer
+- C3D-side build orchestrator (`src/phase1_build.py`) and Dynamo node body (`src/phase1_node.py`) verified end-to-end on a real `D-E` alignment with 10° skew
+
+### Next up — first 3D output
+**Girder swept solids.** Per `scope.md` Phase 1: build the I-shape `Region` from AISC dims (`bf_in`, `tf_in`, `tw_in`, `d_in`), create a 3D `Line` path from `(start_x, start_y, top_of_flange_z)` to `(end_x, end_y, top_of_flange_z)` per girder, call `Solid3d.CreateSweptSolid(profile, path, sweepOptions)` with `Bank=False` (girder web stays vertical even on a graded path). Place on `BRIDGE-GIRDER` with xdata. Re-run behavior: solids regenerate (unlike skeleton elements, which are preserved per the two-mode workflow).
+
+After girders: haunches (parallelogram cross-section sitting on top flange), then deck solid lofted between cross-section profiles at the bearing lines.
+
+### Open follow-up (filed as a chip — small polish)
+- Asymmetric sample lines for offset deck CL: when `deck_cl_offset_from_alignment` is non-zero, sample line endpoints should extend asymmetrically from the alignment crossing so they cover the full deck width with overhang on both sides.
+
+### Phase 0 (complete, 2026-05-06)
+Foundation & proof-of-concept verified — see `MANUAL-TASKS.md` for the verification record. The Phase 0 pipeline (JSON params → 3 `Solid3d` boxes on `BRIDGE-*` layers with xdata) is the baseline Phase 1 builds on.
