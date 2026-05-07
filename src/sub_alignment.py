@@ -80,6 +80,10 @@ class SubAlignmentError(RuntimeError):
     pass
 
 
+_MODULE_BANNER = "[sub_alignment] module v3 (introspection + diag) loaded"
+print(_MODULE_BANNER)
+
+
 def ensure_phase1_sub_alignments(
     tr,
     db,
@@ -95,14 +99,26 @@ def ensure_phase1_sub_alignments(
     with one of our names exists on the drawing, this function leaves it
     alone (matching the two-mode workflow).
     """
+    print("[sub_alignment] entering ensure_phase1_sub_alignments")
     layers.ensure_layer(tr, db, SKELETON_LAYER, color=SKELETON_LAYER_COLOR)
 
     # Resolve style + label set from what's actually present in the drawing,
     # not hardcoded names. Different C3D templates and locales ship with
     # different defaults; we pick the first preferred name that exists, or
     # fall back to whatever the drawing has.
-    style_name = _resolve_alignment_style_name(tr, civ_doc)
-    label_set_name = _resolve_label_set_name(tr, civ_doc)
+    available_styles = _collect_style_names(tr, civ_doc.Styles.AlignmentStyles)
+    available_label_sets = _collect_style_names(
+        tr, civ_doc.Styles.LabelSetStyles.AlignmentLabelSetStyles
+    )
+    print(f"[sub_alignment] available alignment styles: {available_styles!r}")
+    print(f"[sub_alignment] available label sets: {available_label_sets!r}")
+
+    style_name = _pick_first_available(
+        available_styles, PREFERRED_ALIGNMENT_STYLES, kind="AlignmentStyle"
+    )
+    label_set_name = _pick_first_available(
+        available_label_sets, PREFERRED_LABEL_SETS, kind="AlignmentLabelSetStyle"
+    )
     print(
         f"[sub_alignment] using alignment style={style_name!r}, "
         f"label set={label_set_name!r}"
@@ -247,44 +263,17 @@ def _ensure_alignment(
     created.append((name, alignment_id))
 
 
-def _resolve_alignment_style_name(tr, civ_doc) -> str:
-    """Find a usable AlignmentStyle name in the drawing.
-
-    Try preferred names first; otherwise return the name of the first
-    available style. Raise if no styles exist (very unusual — Civil 3D
-    templates ship with at least one).
-    """
-    available = _collect_style_names(tr, civ_doc.Styles.AlignmentStyles)
-    return _pick_first_available(
-        available,
-        PREFERRED_ALIGNMENT_STYLES,
-        kind="AlignmentStyle",
-    )
-
-
-def _resolve_label_set_name(tr, civ_doc) -> str:
-    """Find a usable Alignment label-set style name in the drawing.
-
-    Civil 3D 2024 exposes alignment label sets at
-    `civDoc.Styles.LabelSetStyles.AlignmentLabelSetStyles` (an
-    ObjectIdCollection of label-set-style objects). Different templates ship
-    with different default names — `_No Labels`, `Major Minor`, etc. — so
-    we introspect rather than hardcode.
-    """
-    label_sets = civ_doc.Styles.LabelSetStyles.AlignmentLabelSetStyles
-    available = _collect_style_names(tr, label_sets)
-    return _pick_first_available(
-        available,
-        PREFERRED_LABEL_SETS,
-        kind="AlignmentLabelSetStyle",
-    )
-
-
 def _collect_style_names(tr, id_collection) -> List[str]:
     names = []
     for oid in id_collection:
         obj = tr.GetObject(oid, OpenMode.ForRead)
-        names.append(obj.Name)
+        # Strip whitespace defensively — some templates ship with names that
+        # have stray leading/trailing spaces, and Alignment.Create's name
+        # lookup is exact-match (a leading space breaks the round-trip).
+        name = obj.Name
+        if isinstance(name, str):
+            name = name.strip()
+        names.append(name)
     return names
 
 
