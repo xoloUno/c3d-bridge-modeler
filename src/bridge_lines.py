@@ -1,4 +1,4 @@
-"""bridge_lines.py module v3 — skewed-bearing endpoint geometry.
+"""bridge_lines.py module v4 — anchor at support stations, not bearings.
 
 Bridge reference-line creation in Civil 3D.
 
@@ -90,7 +90,7 @@ def ensure_phase1_bridge_lines(
     names exists in the drawing, this function leaves it alone (matching
     the two-mode workflow).
     """
-    print("[bridge_lines] entering ensure_phase1_bridge_lines (v3)")
+    print("[bridge_lines] entering ensure_phase1_bridge_lines (v4)")
     # Use the original-signature ensure_layer (color only) so we don't
     # depend on a fresh layers.py reload — empirically OneDrive + Python's
     # __pycache__ can leave stale .pyc files even after a clean git pull.
@@ -159,12 +159,17 @@ def _set_layer_plot_and_lock(tr, layer_id, *, plottable: bool, locked: bool) -> 
 def _vertex_specs(params, compute_result) -> List[Tuple[float, float]]:
     """Return sorted [(station, skew_deg), ...] for each polyline vertex.
 
+    Edge polylines anchor at SUPPORT stations (where the sample lines /
+    abutment CLs are), NOT at bearing-line stations. That matches the
+    deck's plan-view extent — what plan-production dimensions target —
+    rather than the bearing line that sits inside the deck slab.
+
     Always includes:
-      - start bearing station with start support's skew angle
-      - end bearing station with end support's skew angle
+      - start support station with start support's skew angle
+      - end support station with end support's skew angle
     Optionally includes internal control points of
-    `deck_cl_offset_from_alignment` (strictly inside the bearing range)
-    with skew_deg = 0 (no support there → no bearing-line skew applies).
+    `deck_cl_offset_from_alignment` (strictly between the supports) with
+    skew_deg = 0 (no support there → no bearing-line skew applies).
     """
     if not compute_result.spans:
         raise BridgeLineError("compute_result has no spans")
@@ -174,13 +179,12 @@ def _vertex_specs(params, compute_result) -> List[Tuple[float, float]]:
             "deferred to Phase 2"
         )
     span = compute_result.spans[0]
-    g0 = span.girders[0]
-    s_begin = g0.start.bearing_station
-    s_end = g0.end.bearing_station
-
     supports_by_id = {s.support_id: s for s in params.supports}
     start_support = supports_by_id[span.start_support_id]
     end_support = supports_by_id[span.end_support_id]
+
+    s_begin = start_support.station
+    s_end = end_support.station
 
     specs: List[Tuple[float, float]] = [
         (s_begin, start_support.skew_angle),
