@@ -63,6 +63,45 @@ captured in `CLAUDE.md` ("PythonNet 3 quirks worth knowing").
 
 ## Phase 1 verification
 
+### Bridge template DWG
+
+The geometry-generation slices load `templates/bridge_template.dwg`
+to pull layer / linetype / skeleton-style / IFC PropSet definitions
+into the active drawing. The DWG must be authored manually — a valid
+C3D template requires AEC dictionary objects, sample line styles,
+and Property Set Definitions that can't be authored from macOS or
+from Python. `templates/README.md` is the source of truth for the
+contents listed below.
+
+- [ ] On Windows, open Civil 3D 2024 and start a new DWG from a
+      clean Civil 3D template (e.g. `_AutoCAD Civil 3D (Imperial)
+      NCS.dwt`).
+- [ ] Add every `BRIDGE-*` layer in `templates/README.md` ("Layer
+      Structure"), with the listed ACI color and linetype.
+      `Continuous` is loaded by default; load `DASHED` from
+      `acad.lin` once via `-LINETYPE → Load → DASHED → acad.lin` so
+      it lives in the template's linetype table.
+- [ ] Define the skeleton element styles named in
+      `templates/README.md` ("Skeleton element styles"): a sample
+      line style for `BRIDGE-SKELETON-SUPPORT`, an alignment style
+      for `BRIDGE-SKELETON-GIRDER` / `-EDGE`, and a profile style
+      for the per-girder profiles. Suggested names match the
+      README so the tool can reference them by string.
+- [ ] Define the `BRIDGE_IFC` Property Set Definition per
+      `templates/README.md` ("IFC Property Set Definitions"):
+      applies to `AcDbSolid3d`; four manual text fields
+      (`IfcEntity`, `PredefinedType`, `BridgeName`, `ElementId`).
+      Use **Manage → CAD Standards → Configure → Property Set
+      Definitions** or the `PROPERTYSETDEFINE` command.
+- [ ] `SAVEAS` to `templates/bridge_template.dwg` in the repo (DWG
+      2018 format is fine — Civil 3D 2024 reads it natively).
+- [ ] Spot-check persistence: close the DWG, re-open it in a fresh
+      Civil 3D session, and confirm (a) all `BRIDGE-*` layers are
+      present with the expected colors and linetypes, (b) the three
+      skeleton styles appear under their respective Settings nodes,
+      and (c) `PROPERTYSETDEFINE` lists `BRIDGE_IFC` with the four
+      fields.
+
 ### AISC W-shape table spot-check
 - [ ] Open `data/aisc_w_shapes.json` and verify a sample of shape
       dimensions against AISC Steel Construction Manual (v15 or v16).
