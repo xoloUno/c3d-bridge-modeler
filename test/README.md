@@ -22,6 +22,9 @@ pytest test/
 - `test_phase1_params.py` — covers `src/phase1_params.py` Phase 1
   parameter parsing, validation, AISC cross-check, and girder-offset
   helpers.
+- `test_phase1_compute.py` — covers `src/phase1_compute.py` end-to-end
+  pure-math orchestrator (params + AISC + elevation chain → per-girder
+  per-bearing-line elevations) plus the text report renderer.
 - `params.phase0.json` — committed schema example with placeholder
   alignment / profile / surface names. Used by the unit tests; do not
   edit. New contributors copy this file to create their local config
