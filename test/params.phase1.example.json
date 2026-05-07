@@ -12,7 +12,10 @@
 
   "deck_cross_slope_left": -2.0,
   "deck_cross_slope_right": -2.0,
+
   "crown_offset": 0.0,
+  "deck_cl_offset_from_alignment": 0.0,
+
   "deck_profile_offset": -0.25,
   "follow_superelevation": false,
 
@@ -50,13 +53,16 @@
       "girder_count": 4,
       "girder_spacing_mode": "EQUAL",
 
+      "perpendicular_deck_width_start": 30.0,
+      "perpendicular_deck_width_end": 30.0,
+
       "left_edge_to_G1_start": 3.0,
       "girder_spacings_start": [8.0, 8.0, 8.0],
-      "Gn_to_right_edge_start": 3.0,
+      "Gn_to_right_edge_start": null,
 
       "left_edge_to_G1_end": 3.0,
       "girder_spacings_end": [8.0, 8.0, 8.0],
-      "Gn_to_right_edge_end": 3.0,
+      "Gn_to_right_edge_end": null,
 
       "girder_geometry": "STRAIGHT",
       "deck_depth": 0.667,

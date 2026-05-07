@@ -150,18 +150,23 @@ def _skewed_endpoints(
 
 
 def deck_widths_by_support_id(compute_result) -> dict:
-    """Build {support_id: max_deck_width_ft} from a Phase1ComputeResult.
+    """Build {support_id: max_along_bearing_length_ft} from a Phase1ComputeResult.
+
+    Sample lines run ALONG the (skewed) bearing line, so their length is the
+    along-bearing distance from left edge of deck to right edge of deck —
+    `perpendicular_deck_width / cos(skew)` at that support. The compute
+    result already exposes this as `bearing_line_length_start/end`.
 
     For Phase 1 single-span this is straightforward: a support is referenced
     as either the start or end of one span. For multi-span (Phase 2+) an
-    intermediate pier is end of span N and start of span N+1; both deck
-    widths should agree, but we take the max defensively.
+    intermediate pier is end of span N and start of span N+1; both bearing-
+    line lengths should agree, but we take the max defensively.
     """
     widths = {}
     for span in compute_result.spans:
         for sid, w in (
-            (span.start_support_id, span.deck_width_start),
-            (span.end_support_id, span.deck_width_end),
+            (span.start_support_id, span.bearing_line_length_start),
+            (span.end_support_id, span.bearing_line_length_end),
         ):
             widths[sid] = max(widths.get(sid, 0.0), w)
     return widths

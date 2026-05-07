@@ -186,11 +186,12 @@ This enables per-element selection when needed (phased erection drawings, sectio
 | `end_station` | float | End bridge station on alignment |
 | `begin_skew_angle` | float | Skew angle at begin station (degrees from perpendicular, 0 = square) |
 | `end_skew_angle` | float | Skew angle at end station (degrees from perpendicular) |
-| `deck_cross_slope_left` | float | Cross slope left of crown (%, negative = downward) |
-| `deck_cross_slope_right` | float | Cross slope right of crown (%) |
-| `crown_offset` | float | Offset of crown from alignment (+ = right, 0 = centerline) |
+| `deck_cross_slope_left` | float | Cross slope left of crown (%, negative = downward away from crown) |
+| `deck_cross_slope_right` | float | Cross slope right of crown (%, negative = downward away from crown) |
+| `crown_offset` | float OR `[{station, value}, ...]` | Offset of crown from alignment (+ = right of alignment). Scalar = constant; array = piecewise-linear control points (must span `[begin_station, end_station]`). |
+| `deck_cl_offset_from_alignment` | float OR `[{station, value}, ...]` | Offset of deck CL from alignment (+ = deck CL is right of alignment, 0 = alignment runs through deck CL). Scalar or station-varying. |
 | `deck_profile_offset` | float | Vertical offset from profile to top of deck (negative = below profile, accounts for pavement depth) |
-| `follow_superelevation` | bool | If true, deck cross slope follows alignment superelevation |
+| `follow_superelevation` | bool | If true, deck cross slope follows alignment superelevation (Phase 2+; Phase 1 must use scalar cross slopes) |
 | `template_dwg` | string | Path to project-specific template drawing (layer defs, styles, PropSet defs). Copied from tool's default template and customized per project. |
 
 ### Span Definition (per span)
@@ -205,7 +206,9 @@ Each span is defined between two support points (piers, abutments, or straddle b
 
 ### Superstructure Definition (per span)
 
-Girder spacings are defined at **bearing lines** (not support line stations). For a flared bridge, spacings differ at each end; the tool linearly interpolates positions between them to construct girder sub-alignments. Edge-of-deck spacings define the deck width envelope and create edge-of-deck sub-alignments.
+Deck width is specified **perpendicular to alignment** (the engineer's intended dimension). Girder spacings are specified **along the bearing line** (matching what's labeled on plans). For skewed supports the bearing-line distance is `perpendicular_deck_width / cos(skew)`. The tool derives the missing edge spacing so the spacing arrays sum exactly to the bearing-line distance.
+
+For a flared bridge, the perpendicular width and spacings differ at each end; the tool linearly interpolates positions between them to construct girder sub-alignments.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -213,12 +216,14 @@ Girder spacings are defined at **bearing lines** (not support line stations). Fo
 | `girder_shape` | string | AISC designation (e.g., "W36X150") or plate girder dimensions |
 | `girder_count` | int | Number of girders in this span |
 | `girder_spacing_mode` | enum | `EQUAL`, `CUSTOM` |
-| `left_edge_to_G1_start` | float | Left edge of deck to first girder CL at start bearing line |
-| `girder_spacings_start` | float[] | Array of girder-to-girder spacings at start bearing line (G1→G2, G2→G3, ...) |
-| `Gn_to_right_edge_start` | float | Last girder CL to right edge of deck at start bearing line |
-| `left_edge_to_G1_end` | float | Left edge of deck to first girder CL at end bearing line |
-| `girder_spacings_end` | float[] | Array of girder-to-girder spacings at end bearing line |
-| `Gn_to_right_edge_end` | float | Last girder CL to right edge of deck at end bearing line |
+| `perpendicular_deck_width_start` | float | Deck width perpendicular to alignment, at start bearing line |
+| `perpendicular_deck_width_end` | float | Deck width perpendicular to alignment, at end bearing line |
+| `left_edge_to_G1_start` | float OR null | Left edge of deck to first girder CL, **along bearing line**, at start bearing. Specify either this OR `Gn_to_right_edge_start`; the other must be `null` and is derived. |
+| `girder_spacings_start` | float[] | Girder-to-girder spacings (G1→G2, G2→G3, ...) along bearing line, at start bearing |
+| `Gn_to_right_edge_start` | float OR null | Last girder CL to right edge of deck, along bearing line, at start bearing. Pair with `left_edge_to_G1_start` per the exactly-one rule. |
+| `left_edge_to_G1_end` | float OR null | Same as start side, for end bearing. |
+| `girder_spacings_end` | float[] | Spacings along bearing line at end bearing |
+| `Gn_to_right_edge_end` | float OR null | Pair with `left_edge_to_G1_end` per the exactly-one rule. |
 | `girder_geometry` | enum | `STRAIGHT` (Phase 1: chorded between bearing lines), `CURVED_RADIUS` (Phase 2+: constant radius per girder), `FOLLOW_ALIGNMENT` (Phase 2+: offset from alignment curve) |
 | `girder_radius` | float[] | Per-girder radius (only if `CURVED_RADIUS`); null otherwise |
 | `girder_spacings_mid` | float[] | Spacings at midspan or intermediate pier stations (required for `CURVED_RADIUS` and `FOLLOW_ALIGNMENT` modes; null for `STRAIGHT`) |
@@ -502,15 +507,26 @@ Girder and edge-of-deck sub-alignments are C3D Alignment + Profile pairs created
 
 Sub-alignment naming convention: `BRG01-G1`, `BRG01-G2`, ..., `BRG01-EDGE-L`, `BRG01-EDGE-R`
 
-Girder sub-alignment offsets at bearing lines are computed from the girder spacing arrays:
+Girder sub-alignment offsets at bearing lines are computed from the perpendicular deck width and the along-bearing spacings:
+
 ```
-G1_offset = -(deck_half_width) + left_edge_to_G1
-G2_offset = G1_offset + girder_spacings[0]
-G3_offset = G2_offset + girder_spacings[1]
+bearing_line_distance = perpendicular_deck_width / cos(skew_at_support)
+left_edge_along_bearing = -bearing_line_distance / 2
+
+G1_along_bearing = left_edge_along_bearing + left_edge_to_G1
+G2_along_bearing = G1_along_bearing + girder_spacings[0]
+G3_along_bearing = G2_along_bearing + girder_spacings[1]
 ...
+
+# Convert to perpendicular alignment offsets for Civil 3D queries:
+G_perpendicular_offset = G_along_bearing × cos(skew) + deck_cl_offset_from_alignment
 ```
 
-For flared bridges, start and end offsets differ. The alignment is a straight line between the two offset positions (Phase 1) or an arc (Phase 2).
+If `Gn_to_right_edge` is null, it is derived as
+`bearing_line_distance − sum(girder_spacings) − left_edge_to_G1` (and
+symmetrically when `left_edge_to_G1` is null).
+
+For flared bridges, perpendicular width and along-bearing offsets differ at start vs end. The girder sub-alignment is a straight line between the two perpendicular offset positions (Phase 1) or an arc (Phase 2).
 
 ### Girder Seat Elevation Calculation
 

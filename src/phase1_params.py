@@ -10,10 +10,31 @@ All linear dimensions and stations are in feet. Cross slopes are in
 percent (% rise per foot, signed). Skew angles are in degrees from
 perpendicular (0 = square).
 
-Coordinate convention: alignment is at the deck centerline. Crown is
-offset from the alignment by `crown_offset` (signed, + = right).
-Girder offsets are computed from the spacing arrays assuming alignment
-at deck CL.
+Coordinate convention
+---------------------
+- Civil 3D alignment offset: signed distance perpendicular to alignment;
+  positive = right of alignment when looking ahead-station.
+- Deck centerline (deck CL): a line parallel to the alignment that runs
+  through the middle of the deck cross-section. May be offset from
+  alignment via `deck_cl_offset_from_alignment` (signed, + = deck CL
+  to right of alignment).
+- Girder spacings (`left_edge_to_G1_*`, `girder_spacings_*`,
+  `Gn_to_right_edge_*`): measured ALONG THE BEARING LINE, which is
+  what's labeled on plans next to the bearing-line dimension string.
+  For zero-skew supports, along-bearing distance = perpendicular
+  distance. For skewed supports the two differ by `1/cos(skew)`.
+- Perpendicular deck width (`perpendicular_deck_width_*`): the deck's
+  true width measured perpendicular to alignment. This is the
+  reference dimension; bearing-line distance is derived as
+  `perpendicular_deck_width / cos(skew)` at the relevant support.
+
+Edge-spacing rule
+-----------------
+Per side (start / end), specify exactly ONE of `left_edge_to_G1` or
+`Gn_to_right_edge`. The other must be `null` and is derived at compute
+time from `perpendicular_deck_width`, the skew angle at that support,
+and the spacings array. This keeps the deck width and girder spacings
+geometrically consistent on skewed bridges.
 
 Pure-logic module: must not import anything from the Civil 3D API
 (`clr`, `Autodesk.*`). Importable on macOS for unit testing.
@@ -21,16 +42,18 @@ Pure-logic module: must not import anything from the Civil 3D API
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
+
+import station_profile as sp
 
 
 # ----------------------------------------------------------------------
 # Allowed enum values (Phase 1 subset of the full schema in scope.md)
 # ----------------------------------------------------------------------
 
-GIRDER_TYPES_PHASE_1 = ("W_SHAPE",)  # PLATE_GIRDER deferred to next slice
-GIRDER_GEOMETRY_PHASE_1 = ("STRAIGHT",)  # CURVED_RADIUS / FOLLOW_ALIGNMENT = Phase 2+
+GIRDER_TYPES_PHASE_1 = ("W_SHAPE",)
+GIRDER_GEOMETRY_PHASE_1 = ("STRAIGHT",)
 GIRDER_SPACING_MODES = ("EQUAL", "CUSTOM")
 HAUNCH_WIDTH_MODES = ("MATCH_TOP_FLANGE", "CUSTOM")
 SUPPORT_TYPES = (
@@ -76,12 +99,20 @@ class Superstructure:
     girder_shape: str
     girder_count: int
     girder_spacing_mode: str
-    left_edge_to_G1_start: float
+
+    # Perpendicular-to-alignment deck width at each end of the span.
+    perpendicular_deck_width_start: float
+    perpendicular_deck_width_end: float
+
+    # Along-bearing-line measurements. Exactly one of left/right edge
+    # spacing is non-None per side; the other is derived in compute().
+    left_edge_to_G1_start: Optional[float]
     girder_spacings_start: Tuple[float, ...]
-    Gn_to_right_edge_start: float
-    left_edge_to_G1_end: float
+    Gn_to_right_edge_start: Optional[float]
+    left_edge_to_G1_end: Optional[float]
     girder_spacings_end: Tuple[float, ...]
-    Gn_to_right_edge_end: float
+    Gn_to_right_edge_end: Optional[float]
+
     deck_depth: float
     haunch_depth: float
     haunch_width_mode: str = "MATCH_TOP_FLANGE"
@@ -106,10 +137,13 @@ class Phase1Params:
     begin_skew_angle: float
     end_skew_angle: float
 
-    # Deck cross-section
+    # Deck cross-section. `crown_offset` and `deck_cl_offset_from_alignment`
+    # may vary along the bridge — they're stored as StationProfile so that
+    # `at(station)` can be queried at any bearing-line station.
     deck_cross_slope_left: float
     deck_cross_slope_right: float
-    crown_offset: float
+    crown_offset: sp.StationProfile
+    deck_cl_offset_from_alignment: sp.StationProfile
     deck_profile_offset: float
     follow_superelevation: bool
 
@@ -129,15 +163,16 @@ _REQUIRED_TOP_LEVEL = (
     "begin_station", "end_station",
     "begin_skew_angle", "end_skew_angle",
     "deck_cross_slope_left", "deck_cross_slope_right",
-    "crown_offset", "deck_profile_offset", "follow_superelevation",
+    "crown_offset", "deck_cl_offset_from_alignment",
+    "deck_profile_offset", "follow_superelevation",
     "supports", "spans", "superstructures",
 )
 _REQUIRED_SUPPORT = ("support_id", "support_type", "station")
 _REQUIRED_SPAN = ("span_id", "start_support_id", "end_support_id")
 _REQUIRED_SUPER = (
     "girder_type", "girder_shape", "girder_count", "girder_spacing_mode",
-    "left_edge_to_G1_start", "girder_spacings_start", "Gn_to_right_edge_start",
-    "left_edge_to_G1_end", "girder_spacings_end", "Gn_to_right_edge_end",
+    "perpendicular_deck_width_start", "perpendicular_deck_width_end",
+    "girder_spacings_start", "girder_spacings_end",
     "deck_depth", "haunch_depth",
 )
 
@@ -156,6 +191,14 @@ def parse(raw: dict) -> Phase1Params:
         raise Phase1ParamsError(
             f"begin_station ({begin}) must be < end_station ({end})"
         )
+
+    crown_profile = _parse_station_profile(
+        raw["crown_offset"], begin, end, "crown_offset"
+    )
+    deck_cl_profile = _parse_station_profile(
+        raw["deck_cl_offset_from_alignment"], begin, end,
+        "deck_cl_offset_from_alignment",
+    )
 
     supports = tuple(_parse_support(s, i) for i, s in enumerate(raw["supports"]))
     _require_unique_ids(supports, "support_id")
@@ -193,13 +236,21 @@ def parse(raw: dict) -> Phase1Params:
         end_skew_angle=float(raw["end_skew_angle"]),
         deck_cross_slope_left=float(raw["deck_cross_slope_left"]),
         deck_cross_slope_right=float(raw["deck_cross_slope_right"]),
-        crown_offset=float(raw["crown_offset"]),
+        crown_offset=crown_profile,
+        deck_cl_offset_from_alignment=deck_cl_profile,
         deck_profile_offset=float(raw["deck_profile_offset"]),
         follow_superelevation=bool(raw["follow_superelevation"]),
         supports=supports,
         spans=spans,
         superstructures=superstructures,
     )
+
+
+def _parse_station_profile(raw, begin: float, end: float, name: str) -> sp.StationProfile:
+    try:
+        return sp.parse(raw, begin_station=begin, end_station=end, name=name)
+    except sp.StationProfileError as exc:
+        raise Phase1ParamsError(str(exc)) from exc
 
 
 def _parse_support(raw: dict, idx: int) -> Support:
@@ -275,17 +326,35 @@ def _parse_superstructure(raw: dict, idx: int) -> Superstructure:
     spacings_start = _parse_spacings(raw["girder_spacings_start"], girder_count, where, "start")
     spacings_end = _parse_spacings(raw["girder_spacings_end"], girder_count, where, "end")
 
+    left_start, right_start = _parse_edge_pair(
+        raw, where, "start",
+        ("left_edge_to_G1_start", "Gn_to_right_edge_start"),
+    )
+    left_end, right_end = _parse_edge_pair(
+        raw, where, "end",
+        ("left_edge_to_G1_end", "Gn_to_right_edge_end"),
+    )
+
+    perp_width_start = float(raw["perpendicular_deck_width_start"])
+    perp_width_end = float(raw["perpendicular_deck_width_end"])
+    if perp_width_start <= 0 or perp_width_end <= 0:
+        raise Phase1ParamsError(
+            f"{where}.perpendicular_deck_width_* must be positive"
+        )
+
     return Superstructure(
         girder_type=girder_type,
         girder_shape=str(raw["girder_shape"]),
         girder_count=girder_count,
         girder_spacing_mode=spacing_mode,
-        left_edge_to_G1_start=float(raw["left_edge_to_G1_start"]),
+        perpendicular_deck_width_start=perp_width_start,
+        perpendicular_deck_width_end=perp_width_end,
+        left_edge_to_G1_start=left_start,
         girder_spacings_start=spacings_start,
-        Gn_to_right_edge_start=float(raw["Gn_to_right_edge_start"]),
-        left_edge_to_G1_end=float(raw["left_edge_to_G1_end"]),
+        Gn_to_right_edge_start=right_start,
+        left_edge_to_G1_end=left_end,
         girder_spacings_end=spacings_end,
-        Gn_to_right_edge_end=float(raw["Gn_to_right_edge_end"]),
+        Gn_to_right_edge_end=right_end,
         deck_depth=float(raw["deck_depth"]),
         haunch_depth=float(raw["haunch_depth"]),
         haunch_width_mode=haunch_mode,
@@ -293,6 +362,35 @@ def _parse_superstructure(raw: dict, idx: int) -> Superstructure:
         girder_geometry=geometry,
         end_diaphragm=bool(raw.get("end_diaphragm", False)),
         topping_depth=float(raw.get("topping_depth", 0.0)),
+    )
+
+
+def _parse_edge_pair(
+    raw: dict,
+    where: str,
+    side: str,
+    keys: Tuple[str, str],
+) -> Tuple[Optional[float], Optional[float]]:
+    """Return (left_edge_to_G1, Gn_to_right_edge) for one side; exactly one must be specified."""
+    left_key, right_key = keys
+    left = raw.get(left_key)
+    right = raw.get(right_key)
+
+    if left is None and right is None:
+        raise Phase1ParamsError(
+            f"{where}: exactly one of {left_key} / {right_key} must be specified "
+            f"(both are null)"
+        )
+    if left is not None and right is not None:
+        raise Phase1ParamsError(
+            f"{where}: exactly one of {left_key} / {right_key} must be specified "
+            f"(both have values; the other must be null so it can be derived from "
+            f"perpendicular_deck_width_{side} and the skew at that support)"
+        )
+
+    return (
+        None if left is None else float(left),
+        None if right is None else float(right),
     )
 
 
@@ -349,44 +447,12 @@ def _validate_supports_in_range(supports, begin: float, end: float) -> None:
 # Helpers — pure math, used by build orchestration and tests
 # ----------------------------------------------------------------------
 
-def girder_offsets_at_bearing(
-    left_edge_to_G1: float,
-    girder_spacings: Tuple[float, ...],
-    Gn_to_right_edge: float,
-) -> Tuple[float, ...]:
-    """Return signed offsets (ft) of each girder centerline from the deck CL.
-
-    Assumes alignment at deck CL: deck spans symmetrically [-W/2, +W/2]
-    where W is the total deck width derived from the spacing arrays.
-    """
-    deck_width = left_edge_to_G1 + sum(girder_spacings) + Gn_to_right_edge
-    left_edge = -deck_width / 2.0
-    offsets = [left_edge + left_edge_to_G1]
-    for spacing in girder_spacings:
-        offsets.append(offsets[-1] + spacing)
-    return tuple(offsets)
-
-
-def deck_width(
-    left_edge_to_G1: float,
-    girder_spacings: Tuple[float, ...],
-    Gn_to_right_edge: float,
-) -> float:
-    return left_edge_to_G1 + sum(girder_spacings) + Gn_to_right_edge
-
-
 def validate_against_aisc(params: Phase1Params, aisc_table: dict) -> List[str]:
-    """Cross-validate W-shape designations against the loaded AISC table.
-
-    Returns a list of error strings (empty if all shapes resolve). Caller
-    can raise or report as preferred. AISC table loading is the caller's
-    responsibility (see src/aisc.load).
-    """
+    """Cross-validate W-shape designations against the loaded AISC table."""
     errors: List[str] = []
     for i, sup in enumerate(params.superstructures):
         if sup.girder_type != "W_SHAPE":
             continue
-        # Use the same normalization src/aisc.get applies
         key = sup.girder_shape.strip().upper().replace("×", "X").replace("*", "X")
         if key not in aisc_table:
             errors.append(
