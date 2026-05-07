@@ -28,6 +28,7 @@ def _valid_raw():
         "deck_cross_slope_left": -2.0,
         "deck_cross_slope_right": -2.0,
         "crown_offset": 0.0,
+        "deck_cl_offset_from_alignment": 0.0,
         "deck_profile_offset": -0.25,
         "follow_superelevation": False,
         "supports": [
@@ -54,12 +55,14 @@ def _valid_raw():
                 "girder_shape": "W36X150",
                 "girder_count": 4,
                 "girder_spacing_mode": "EQUAL",
+                "perpendicular_deck_width_start": 30.0,
+                "perpendicular_deck_width_end": 30.0,
                 "left_edge_to_G1_start": 3.0,
                 "girder_spacings_start": [8.0, 8.0, 8.0],
-                "Gn_to_right_edge_start": 3.0,
+                "Gn_to_right_edge_start": None,
                 "left_edge_to_G1_end": 3.0,
                 "girder_spacings_end": [8.0, 8.0, 8.0],
-                "Gn_to_right_edge_end": 3.0,
+                "Gn_to_right_edge_end": None,
                 "girder_geometry": "STRAIGHT",
                 "deck_depth": 0.667,
                 "haunch_depth": 0.0833,
@@ -83,6 +86,7 @@ def test_parse_valid():
     assert params.spans[0].span_id == "SPAN-1"
     assert params.superstructures[0].girder_shape == "W36X150"
     assert params.superstructures[0].girder_spacings_start == (8.0, 8.0, 8.0)
+    assert params.superstructures[0].perpendicular_deck_width_start == 30.0
 
 
 def test_load_committed_example():
@@ -91,6 +95,40 @@ def test_load_committed_example():
     assert params.alignment_name == "EXAMPLE-ALIGNMENT"
     assert len(params.supports) == 2
     assert params.superstructures[0].girder_shape == "W36X150"
+    assert params.superstructures[0].perpendicular_deck_width_start == 30.0
+    # Example uses left_edge specified, right_edge derived
+    assert params.superstructures[0].left_edge_to_G1_start == 3.0
+    assert params.superstructures[0].Gn_to_right_edge_start is None
+
+
+def test_constant_offsets_become_two_point_profile():
+    params = p1.parse(_valid_raw())
+    assert params.crown_offset.at(1000.0) == 0.0
+    assert params.crown_offset.at(1100.0) == 0.0
+    assert params.deck_cl_offset_from_alignment.at(1100.0) == 0.0
+
+
+def test_array_form_crown_offset_interpolates():
+    raw = _valid_raw()
+    raw["crown_offset"] = [
+        {"station": 1000.0, "value": 9.0},
+        {"station": 1200.0, "value": 0.0},
+    ]
+    params = p1.parse(raw)
+    assert params.crown_offset.at(1000.0) == 9.0
+    assert math.isclose(params.crown_offset.at(1100.0), 4.5, abs_tol=1e-9)
+    assert params.crown_offset.at(1200.0) == 0.0
+
+
+def test_array_form_deck_cl_offset_interpolates():
+    raw = _valid_raw()
+    raw["deck_cl_offset_from_alignment"] = [
+        {"station": 1000.0, "value": 0.0},
+        {"station": 1200.0, "value": 4.0},
+    ]
+    params = p1.parse(raw)
+    assert params.deck_cl_offset_from_alignment.at(1000.0) == 0.0
+    assert math.isclose(params.deck_cl_offset_from_alignment.at(1050.0), 1.0, abs_tol=1e-9)
 
 
 # ----------------------------------------------------------------------
@@ -184,47 +222,75 @@ def test_haunch_width_required_when_custom():
 
 
 # ----------------------------------------------------------------------
-# Helpers: girder offsets and deck width
+# Edge spacing exactly-one-of validation
 # ----------------------------------------------------------------------
 
-def test_girder_offsets_symmetric_4_girder():
-    # 3 + 8 + 8 + 8 + 3 = 30 ft deck
-    # G1 at -15+3 = -12, G2 at -4, G3 at +4, G4 at +12
-    offsets = p1.girder_offsets_at_bearing(
-        left_edge_to_G1=3.0,
-        girder_spacings=(8.0, 8.0, 8.0),
-        Gn_to_right_edge=3.0,
-    )
-    assert offsets == (-12.0, -4.0, 4.0, 12.0)
+def test_both_edge_spacings_specified_rejected():
+    raw = _valid_raw()
+    raw["superstructures"][0]["Gn_to_right_edge_start"] = 3.0  # both now specified
+    with pytest.raises(p1.Phase1ParamsError, match="exactly one of"):
+        p1.parse(raw)
 
 
-def test_girder_offsets_asymmetric_flared_end():
-    # Flared end: spacings widen
-    # 3 + 8 + 9 + 10 + 3 = 33 ft deck
-    # left edge at -16.5; G1 at -13.5, G2 at -5.5, G3 at 3.5, G4 at 13.5
-    offsets = p1.girder_offsets_at_bearing(
-        left_edge_to_G1=3.0,
-        girder_spacings=(8.0, 9.0, 10.0),
-        Gn_to_right_edge=3.0,
-    )
-    assert math.isclose(offsets[0], -13.5, abs_tol=1e-9)
-    assert math.isclose(offsets[1], -5.5, abs_tol=1e-9)
-    assert math.isclose(offsets[2], 3.5, abs_tol=1e-9)
-    assert math.isclose(offsets[3], 13.5, abs_tol=1e-9)
+def test_both_edge_spacings_null_rejected():
+    raw = _valid_raw()
+    raw["superstructures"][0]["left_edge_to_G1_start"] = None
+    raw["superstructures"][0]["Gn_to_right_edge_start"] = None
+    with pytest.raises(p1.Phase1ParamsError, match="exactly one of"):
+        p1.parse(raw)
 
 
-def test_deck_width_helper():
-    assert p1.deck_width(3.0, (8.0, 8.0, 8.0), 3.0) == 30.0
+def test_left_specified_right_null_works():
+    raw = _valid_raw()
+    raw["superstructures"][0]["left_edge_to_G1_start"] = 3.0
+    raw["superstructures"][0]["Gn_to_right_edge_start"] = None
+    params = p1.parse(raw)
+    assert params.superstructures[0].left_edge_to_G1_start == 3.0
+    assert params.superstructures[0].Gn_to_right_edge_start is None
 
 
-def test_girder_offsets_2_girder():
-    offsets = p1.girder_offsets_at_bearing(
-        left_edge_to_G1=2.0,
-        girder_spacings=(10.0,),
-        Gn_to_right_edge=2.0,
-    )
-    # 14 ft deck, edges at +/-7, G1 at -5, G2 at +5
-    assert offsets == (-5.0, 5.0)
+def test_right_specified_left_null_works():
+    raw = _valid_raw()
+    raw["superstructures"][0]["left_edge_to_G1_start"] = None
+    raw["superstructures"][0]["Gn_to_right_edge_start"] = 3.0
+    params = p1.parse(raw)
+    assert params.superstructures[0].left_edge_to_G1_start is None
+    assert params.superstructures[0].Gn_to_right_edge_start == 3.0
+
+
+def test_perpendicular_deck_width_must_be_positive():
+    raw = _valid_raw()
+    raw["superstructures"][0]["perpendicular_deck_width_start"] = -1.0
+    with pytest.raises(p1.Phase1ParamsError, match="must be positive"):
+        p1.parse(raw)
+
+
+def test_perpendicular_deck_width_zero_rejected():
+    raw = _valid_raw()
+    raw["superstructures"][0]["perpendicular_deck_width_start"] = 0.0
+    with pytest.raises(p1.Phase1ParamsError, match="must be positive"):
+        p1.parse(raw)
+
+
+# ----------------------------------------------------------------------
+# Station profile validation surfacing through phase1_params errors
+# ----------------------------------------------------------------------
+
+def test_crown_offset_array_must_cover_envelope():
+    raw = _valid_raw()
+    raw["crown_offset"] = [
+        {"station": 1010.0, "value": 0.0},  # past begin_station = 1000
+        {"station": 1200.0, "value": 0.0},
+    ]
+    with pytest.raises(p1.Phase1ParamsError, match="begin_station"):
+        p1.parse(raw)
+
+
+def test_crown_offset_array_too_short():
+    raw = _valid_raw()
+    raw["crown_offset"] = [{"station": 1000.0, "value": 0.0}]
+    with pytest.raises(p1.Phase1ParamsError, match="at least 2"):
+        p1.parse(raw)
 
 
 # ----------------------------------------------------------------------

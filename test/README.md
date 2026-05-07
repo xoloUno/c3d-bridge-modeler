@@ -1,10 +1,10 @@
 # Tests
 
-Pure-logic tests run on macOS; Civil-3D-API modules (`c3d_doc.py`,
+Pure-logic tests run on macOS. Modules that import `clr` /
+`Autodesk.*` cannot be imported off Windows: `c3d_doc.py`,
 `alignment.py`, `layers.py`, `solids.py`, `xdata.py`, `purge.py`,
-`build.py`, `phase1_build.py`, `skeleton.py`) cannot be imported off
-Windows and are not covered here. They are exercised manually via the
-checklist in `MANUAL-TASKS.md`.
+`build.py`, `phase1_build.py`, `skeleton.py`. They are exercised
+manually via the checklist in `MANUAL-TASKS.md`.
 
 ## Run
 
@@ -21,11 +21,15 @@ pytest test/
 - `test_elevation.py` — covers `src/elevation.py` bridge elevation chain
   (top of deck → girder → bearing seat → cap → column → footing).
 - `test_phase1_params.py` — covers `src/phase1_params.py` Phase 1
-  parameter parsing, validation, AISC cross-check, and girder-offset
-  helpers.
+  parameter parsing, validation, AISC cross-check, and the
+  exactly-one-of edge-spacing rule.
 - `test_phase1_compute.py` — covers `src/phase1_compute.py` end-to-end
   pure-math orchestrator (params + AISC + elevation chain → per-girder
-  per-bearing-line elevations) plus the text report renderer.
+  per-bearing-line elevations), including skew correction, deck-CL
+  offset shift, and station-varying crown / deck-CL offsets, plus the
+  text report renderer.
+- `test_station_profile.py` — covers `src/station_profile.py` scalar /
+  array parsing and linear interpolation between control points.
 - `params.phase0.json` — committed schema example with placeholder
   alignment / profile / surface names. Used by the unit tests; do not
   edit. New contributors copy this file to create their local config

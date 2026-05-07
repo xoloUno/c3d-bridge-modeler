@@ -100,6 +100,26 @@ captured in `CLAUDE.md` ("PythonNet 3 quirks worth knowing").
 - [ ] Confirm no `BRIDGE-*` layers or geometry are created — this
       slice is read-only and informational
 
+### Phase 1 schema migration (skew + station-varying offsets)
+- [ ] Update `test/params.phase1.local.json` to the new schema:
+      - Add `perpendicular_deck_width_start` and `perpendicular_deck_width_end`
+        (the engineer's intended perpendicular deck width).
+      - Set EXACTLY ONE of (`left_edge_to_G1_*`, `Gn_to_right_edge_*`) per
+        side; the other must be `null` (will be derived from
+        `perpendicular_deck_width / cos(skew)` and the spacings).
+      - Add `deck_cl_offset_from_alignment` (scalar, e.g. `0.0`, or array
+        of `{station, value}` for station-varying).
+      - Confirm `crown_offset` is scalar OR array form (it now accepts
+        both).
+- [ ] Re-run the graph; for skewed supports, the elevation-report numbers
+      will shift slightly vs. the previous run because spacings are now
+      correctly interpreted as along-bearing measurements (perpendicular
+      offsets are derived via `× cos(skew)`).
+- [ ] Sample-line lengths now equal `perpendicular_deck_width / cos(skew)`
+      + 2 ft overhang. For the 22 ft perpendicular deck at 10° skew, sample
+      line should be ~24.34 ft (was 24.0 ft when spacings were treated as
+      perpendicular).
+
 ### Phase 1 sample-line skeleton verification
 - [ ] Bump the reload trigger in the Python node body (already at v2
       in committed `src/phase1_node.py`) and rerun the graph
