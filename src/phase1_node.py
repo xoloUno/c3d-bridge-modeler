@@ -26,14 +26,20 @@ import os
 # typically need to make to the node body itself; everything else lives
 # in the imported `src/*.py` files and is reloaded via the sys.modules
 # purge below.
-print("[phase1_node] reload trigger v3")
+print("[phase1_node] reload trigger v14")
 
 repo_root = IN[0]                                               # noqa: F821
 params_path = IN[1]                                             # noqa: F821
 
 src_path = os.path.join(repo_root, "src")
-if src_path not in sys.path:
-    sys.path.insert(0, src_path)
+
+# Defensive: sys.path persists across Dynamo graph runs. If the user
+# previously pointed `repo_root` at a different clone (e.g. an old
+# OneDrive-backed working copy), THAT path is still in sys.path and
+# can shadow our new clone for some imports. Strip any stale
+# c3d-bridge-modeler entries before inserting the current one.
+sys.path[:] = [p for p in sys.path if "c3d-bridge-modeler" not in p]
+sys.path.insert(0, src_path)
 
 # Drop every Phase 1 src/ module from sys.modules so the next import is
 # fresh — `importlib.reload` only refreshes a single module, leaving its
@@ -47,6 +53,9 @@ _OWN_MODULES = (
     "units",
     "aisc",
     "skeleton",
+    "bridge_lines",
+    "layers",
+    "xdata",
     "c3d_doc",
     "alignment",
 )

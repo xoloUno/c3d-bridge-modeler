@@ -3,12 +3,6 @@
 This is the entry point called by the Dynamo Python node (see
 `src/phase1_node.py` for the node body).
 
-For this slice the orchestrator stops at the elevation-table report —
-no geometry is generated yet. That keeps the Phase 1 pure-math layer
-testable end-to-end against real C3D alignment + profile data, before
-sample lines, sub-alignments, and swept solids start landing in
-follow-up slices.
-
 Pipeline:
     JSON params  ──▶ phase1_params.load()
                                  │
@@ -17,10 +11,22 @@ Pipeline:
     C3D alignment + profile  ──▶ profile_elevation_at lookup
                                  ▼
                   phase1_compute.compute()
+                                 ├─▶ skeleton.ensure_support_sample_lines()
+                                 │         (BRIDGE-SUPPORTS sample line group)
+                                 ├─▶ bridge_lines.ensure_phase1_bridge_lines()
+                                 │         (BRIDGE-EDGE-L, BRIDGE-EDGE-R, and
+                                 │          BRIDGE-CL when deck CL ≠ alignment;
+                                 │          polylines on BRIDGE-NOPLOT layer)
                                  ▼
                   format_text_report(...)
                                  ▼
                   Watch node summary string
+
+Skeleton elements (sample lines, sub-alignments) are created on first run
+and preserved on subsequent runs — designers can move them between runs
+and the tool reads positions back. Solid geometry (deck, girders,
+haunches) is regenerated from JSON each run; that piece lands in a
+follow-up slice.
 """
 from __future__ import annotations
 
@@ -32,6 +38,7 @@ import aisc
 import c3d_doc
 import alignment as al
 import skeleton
+import bridge_lines
 
 
 def main(repo_root: str, params_path: str) -> str:
@@ -66,6 +73,7 @@ def _run(params_path: str) -> str:
         return "ERROR: AISC validation failed:\n  " + "\n  ".join(aisc_errors)
 
     skeleton_summary = ""
+    sub_alignment_summary = ""
     with c3d_doc.locked_document():
         with c3d_doc.transaction() as tr:
             print(f"[phase1_build] resolving alignment {params.alignment_name!r}")
@@ -92,6 +100,23 @@ def _run(params_path: str) -> str:
             )
             print(f"[phase1_build] {skeleton_summary}")
 
+            db = c3d_doc.active_db()
+            print("[phase1_build] ensuring edge-of-deck and bridge-CL polylines")
+            bl = bridge_lines.ensure_phase1_bridge_lines(
+                tr=tr,
+                db=db,
+                alignment_obj=alignment_obj,
+                params=params,
+                compute_result=result,
+            )
+            sub_alignment_summary = (
+                f"Bridge lines: created {len(bl['created'])} "
+                f"({', '.join(name for name, _ in bl['created']) or '—'}), "
+                f"preserved {len(bl['preserved'])} "
+                f"({', '.join(name for name, _ in bl['preserved']) or '—'})"
+            )
+            print(f"[phase1_build] {sub_alignment_summary}")
+
             tr.Commit()
 
     report = phase1_compute.format_text_report(result)
@@ -100,4 +125,4 @@ def _run(params_path: str) -> str:
     print("[phase1_build] elevation report:")
     for line in report.splitlines():
         print(f"[phase1_build] {line}")
-    return f"{skeleton_summary}\n\n{report}"
+    return f"{skeleton_summary}\n{sub_alignment_summary}\n\n{report}"

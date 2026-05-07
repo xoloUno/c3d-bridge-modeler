@@ -61,6 +61,16 @@ class StationProfile:
             f"{self.name}: failed to bracket station {station} in profile {self.points}"
         )
 
+    def is_effectively_constant_zero(self, tolerance: float = 1e-9) -> bool:
+        """True iff every control point's value is within `tolerance` of zero.
+
+        Used to decide whether a separate bridge-CL sub-alignment is worth
+        creating: when `deck_cl_offset_from_alignment` is constant zero, the
+        existing roadway alignment already serves as the deck centerline,
+        so no extra alignment is needed.
+        """
+        return all(abs(v) <= tolerance for _s, v in self.points)
+
 
 def parse(
     raw: Union[float, int, list],

@@ -22,6 +22,21 @@ See `docs/scope.md` for the full project scope, parameter definitions, phased de
 - C# indexers (`SymbolTable.this[string]`) do **not** surface as Python `__getitem__`. Use the underlying `get_Item(name)` method instead — `lt[name]` raises `TypeError: unindexable object`. For `BlockTable` specifically, `SymbolUtilityServices.GetBlockModelSpaceId(db)` skips the indexing entirely.
 - `with doc.LockDocument():` and `with tr:` (raw `Transaction`) misroute Python's `__exit__(exc_type, exc_val, tb)` to .NET's `OnExit(int)` during exception unwinding, raising a masking `TypeError`. Wrap IDisposable lifetimes in `@contextmanager` helpers that explicitly call `Dispose()` in a `finally` block — see `src/c3d_doc.py` (`locked_document`, `transaction`).
 - A document write lock IS required around any `OpenMode.ForWrite` `tr.GetObject()` call from a Python node; without it AutoCAD raises `eLockViolation`. The lock acquired around an unrelated edit can leak in and let a script "succeed" on a warm drawing — always lock explicitly.
+- pythonnet 3 does **not** reliably disambiguate same-arity .NET method overloads when one accepts `ObjectId` and another accepts `string` for the same positional slot. Empirically observed with `Alignment.Create(CivilDocument, PolylineOptions, string, …)`: passing real `ObjectId` values still dispatched to the all-strings overload, which then failed C3D's name-based label-set lookup. Pin the desired overload explicitly via `Method.Overloads[T1, T2, …]`. Example for the ObjectId-typed `Alignment.Create`:
+  ```python
+  from System import String
+  from Autodesk.AutoCAD.DatabaseServices import ObjectId
+  from Autodesk.Civil.ApplicationServices import CivilDocument
+  from Autodesk.Civil.DatabaseServices import Alignment, PolylineOptions
+
+  create_objid = Alignment.Create.Overloads[
+      CivilDocument, PolylineOptions, String,
+      ObjectId, ObjectId, ObjectId, ObjectId,
+  ]
+  alignment_id = create_objid(civ_doc, options, name,
+                              ObjectId.Null, layer_id, style_id, label_set_id)
+  ```
+  This is the canonical handling for any same-arity ObjectId-vs-string overload pair.
 
 ## Key Architecture Decisions
 

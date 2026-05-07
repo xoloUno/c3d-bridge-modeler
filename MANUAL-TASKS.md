@@ -142,6 +142,40 @@ captured in `CLAUDE.md` ("PythonNet 3 quirks worth knowing").
 - [ ] Optional: manually move one sample line in C3D (drag a station
       grip), rerun, confirm the moved line is preserved in place
 
+### Phase 1 edge-of-deck and bridge-CL polyline verification
+- [ ] Bump the reload trigger (committed file is at v10) and rerun
+      the graph
+- [ ] Watch node now contains an additional summary line:
+      `Bridge lines: created N (BRIDGE-EDGE-L, BRIDGE-EDGE-R, ...),
+      preserved 0 (—)` on first run
+- [ ] A new layer `BRIDGE-NOPLOT` is added to the Layer Properties
+      Manager, with **Plot = No** and **Lock = Yes** (magenta color
+      by default — adjust in your project template if desired)
+- [ ] In ModelSpace, two AutoCAD Polylines exist on `BRIDGE-NOPLOT`:
+      one along the left edge of deck, one along the right edge.
+      They span bearing-line-to-bearing-line and are snappable for
+      DIMLINEAR / DIMRADIUS / DIMANGULAR.
+- [ ] If your local params have `deck_cl_offset_from_alignment` set
+      to a non-zero scalar or array form, a third polyline
+      `BRIDGE-CL` is created along the deck centerline. With the
+      constant `0.0` default, no `BRIDGE-CL` polyline is created
+      (the roadway alignment already runs along the deck CL).
+- [ ] `XDLIST` on one of the bridge polylines shows
+      `BRIDGE_MODELER` xdata with payload like
+      `{"bridge_line":"BRIDGE-EDGE-L"}` — that's the tag the tool
+      uses for idempotent find-or-create on subsequent runs.
+- [ ] Re-run the graph: summary now shows
+      `Bridge lines: created 0 (—), preserved N (...)` — polylines
+      are preserved across runs.
+- [ ] Confirm the layer's Lock attribute prevents accidental edits:
+      try to MOVE one of the polylines via standard AutoCAD
+      commands; AutoCAD should refuse with "1 was on a locked
+      layer".
+- [ ] Optional: edit `deck_cl_offset_from_alignment` to a non-zero
+      value, delete the existing `BRIDGE-EDGE-L`/`-R` polylines so
+      they get recreated at the shifted positions, re-run, confirm
+      a `BRIDGE-CL` polyline now appears between the two edges.
+
 ## Operational notes for future runs
 
 - **`CTRL-S` the DWG** immediately after a successful Dynamo run.

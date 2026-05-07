@@ -183,3 +183,54 @@ def test_unsupported_type():
             {"station": 0.0},
             begin_station=0.0, end_station=100.0, name="x",
         )
+
+
+# ----------------------------------------------------------------------
+# is_effectively_constant_zero
+# ----------------------------------------------------------------------
+
+def test_constant_zero_is_zero():
+    p = sp.parse(0.0, begin_station=0.0, end_station=100.0, name="x")
+    assert p.is_effectively_constant_zero()
+
+
+def test_nearly_zero_within_tolerance_is_zero():
+    p = sp.parse(1e-12, begin_station=0.0, end_station=100.0, name="x")
+    assert p.is_effectively_constant_zero()
+    assert p.is_effectively_constant_zero(tolerance=1e-9)
+
+
+def test_constant_nonzero_is_not_zero():
+    p = sp.parse(5.0, begin_station=0.0, end_station=100.0, name="x")
+    assert not p.is_effectively_constant_zero()
+
+
+def test_negative_constant_is_not_zero():
+    p = sp.parse(-5.0, begin_station=0.0, end_station=100.0, name="x")
+    assert not p.is_effectively_constant_zero()
+
+
+def test_array_with_one_nonzero_value_is_not_zero():
+    p = sp.parse(
+        [{"station": 0.0, "value": 0.0}, {"station": 100.0, "value": 1.0}],
+        begin_station=0.0, end_station=100.0, name="x",
+    )
+    assert not p.is_effectively_constant_zero()
+
+
+def test_array_all_zeros_is_zero():
+    p = sp.parse(
+        [
+            {"station": 0.0, "value": 0.0},
+            {"station": 50.0, "value": 0.0},
+            {"station": 100.0, "value": 0.0},
+        ],
+        begin_station=0.0, end_station=100.0, name="x",
+    )
+    assert p.is_effectively_constant_zero()
+
+
+def test_value_just_above_tolerance_is_not_zero():
+    p = sp.parse(0.001, begin_station=0.0, end_station=100.0, name="x")
+    assert not p.is_effectively_constant_zero(tolerance=1e-9)
+    assert p.is_effectively_constant_zero(tolerance=0.01)
