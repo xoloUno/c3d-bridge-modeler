@@ -13,9 +13,10 @@ Pipeline:
                   phase1_compute.compute()
                                  ├─▶ skeleton.ensure_support_sample_lines()
                                  │         (BRIDGE-SUPPORTS sample line group)
-                                 ├─▶ sub_alignment.ensure_phase1_sub_alignments()
+                                 ├─▶ bridge_lines.ensure_phase1_bridge_lines()
                                  │         (BRIDGE-EDGE-L, BRIDGE-EDGE-R, and
-                                 │          BRIDGE-CL when deck CL ≠ alignment)
+                                 │          BRIDGE-CL when deck CL ≠ alignment;
+                                 │          polylines on BRIDGE-NOPLOT layer)
                                  ▼
                   format_text_report(...)
                                  ▼
@@ -37,7 +38,7 @@ import aisc
 import c3d_doc
 import alignment as al
 import skeleton
-import sub_alignment
+import bridge_lines
 
 
 def main(repo_root: str, params_path: str) -> str:
@@ -100,22 +101,19 @@ def _run(params_path: str) -> str:
             print(f"[phase1_build] {skeleton_summary}")
 
             db = c3d_doc.active_db()
-            from c3d_doc import active_civil_doc  # local import to keep top stable
-            civ_doc = active_civil_doc()
-            print("[phase1_build] ensuring edge-of-deck sub-alignments")
-            sa = sub_alignment.ensure_phase1_sub_alignments(
+            print("[phase1_build] ensuring edge-of-deck and bridge-CL polylines")
+            bl = bridge_lines.ensure_phase1_bridge_lines(
                 tr=tr,
                 db=db,
-                civ_doc=civ_doc,
                 alignment_obj=alignment_obj,
                 params=params,
                 compute_result=result,
             )
             sub_alignment_summary = (
-                f"Sub-alignments: created {len(sa['created'])} "
-                f"({', '.join(name for name, _ in sa['created']) or '—'}), "
-                f"preserved {len(sa['preserved'])} "
-                f"({', '.join(name for name, _ in sa['preserved']) or '—'})"
+                f"Bridge lines: created {len(bl['created'])} "
+                f"({', '.join(name for name, _ in bl['created']) or '—'}), "
+                f"preserved {len(bl['preserved'])} "
+                f"({', '.join(name for name, _ in bl['preserved']) or '—'})"
             )
             print(f"[phase1_build] {sub_alignment_summary}")
 

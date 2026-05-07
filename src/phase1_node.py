@@ -26,7 +26,7 @@ import os
 # typically need to make to the node body itself; everything else lives
 # in the imported `src/*.py` files and is reloaded via the sys.modules
 # purge below.
-print("[phase1_node] reload trigger v9")
+print("[phase1_node] reload trigger v10")
 
 repo_root = IN[0]                                               # noqa: F821
 params_path = IN[1]                                             # noqa: F821
@@ -47,8 +47,9 @@ _OWN_MODULES = (
     "units",
     "aisc",
     "skeleton",
-    "sub_alignment",
+    "bridge_lines",
     "layers",
+    "xdata",
     "c3d_doc",
     "alignment",
 )

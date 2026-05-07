@@ -45,11 +45,11 @@ Girder span length is measured **bearing-line-to-bearing-line**, not support-lin
 2. **Dimensionable reference** — the alignment IS a true arc, so DIMRADIUS works for plan-view radius dimensioning
 3. **Queryable path** — downstream code (bearing placement, diaphragm connection points) queries the alignment/profile for positions
 
-**Edge-of-Deck Sub-Alignments** define the deck width envelope. Like girder sub-alignments, these are true C3D alignments that are dimensionable (DIMRADIUS works for edge-of-deck radius on flared bridges where the edge is not a simple alignment offset). Two are always created: `BRIDGE-EDGE-L` and `BRIDGE-EDGE-R`.
+**Edge-of-Deck Reference Lines** define the deck width envelope. For Phase 1 these are AutoCAD Polylines (NOT true C3D Alignments) on a `BRIDGE-NOPLOT` layer that is locked + non-plotting by default — snappable for plan-production dimensioning, locked against accidental edits, and out of plotted output (the deck solid's projected edge handles plot visibility). Two are always created: `BRIDGE-EDGE-L` and `BRIDGE-EDGE-R`. Phase 2 may upgrade these to true C3D Alignments if curved-girder workflows need station/offset queries; the path back is documented in `CLAUDE.md` (PythonNet 3 `.Overloads[]` quirk for `Alignment.Create`).
 
-**Bridge Centerline Sub-Alignment** is created **only when** `deck_cl_offset_from_alignment` is **not** the constant zero profile. When the roadway alignment runs through the deck centerline, the existing alignment already serves as the bridge CL — no extra alignment needed. When the deck CL is offset from alignment (widened bridges, secondary roads tied to a primary alignment, asymmetric structures), `BRIDGE-CL` is created so that plan-production dimensions can target the deck centerline directly.
+**Bridge Centerline Reference Line** is created **only when** `deck_cl_offset_from_alignment` is **not** the constant zero profile. When the roadway alignment runs through the deck centerline, the existing alignment already serves as the bridge CL — no extra polyline needed. When the deck CL is offset from alignment (widened bridges, secondary roads tied to a primary alignment, asymmetric structures), `BRIDGE-CL` is created so plan-production dimensions can target the deck centerline directly. Same `BRIDGE-NOPLOT` layer as the edges.
 
-All skeleton elements are placed on `BRIDGE-SKELETON-*` layers and can be frozen for drawing production.
+All skeleton elements are placed on `BRIDGE-SKELETON-*` (sample lines) or `BRIDGE-NOPLOT` (reference polylines) layers and can be frozen / customized for drawing production.
 
 ### Two-Mode Workflow (Create and Update)
 
@@ -399,6 +399,7 @@ Rationale: implicit "lowest-of-corners" sampling pushes the entire footing deepe
 - `CURVED_RADIUS` girder mode: independent constant radius per girder (for widening bridges with non-concentric girder radii)
 - Girder spacings at midspan / intermediate pier stations (required control points for curved modes)
 - Superelevation-following mode for deck cross slope (haunch profiles lofted between stations with varying cross-slope)
+- **Upgrade edge-of-deck and bridge-CL reference geometry from polylines to true C3D Alignments** when curved-girder workflows need station/offset queries (e.g. `alignment.PointLocation` along the deck CL). Phase 1 used polylines on `BRIDGE-NOPLOT` to sidestep a pythonnet 3 overload-resolution issue with `Alignment.Create`; the path back is documented in `CLAUDE.md` (PythonNet 3 quirks → `.Overloads[T...]` for ObjectId-vs-string overload pairs).
 
 **Multi-span deliverables:**
 - Multiple spans with intermediate pier stations and individual skew angles

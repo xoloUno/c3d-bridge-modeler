@@ -3,7 +3,7 @@
 Pure-logic tests run on macOS. Modules that import `clr` /
 `Autodesk.*` cannot be imported off Windows: `c3d_doc.py`,
 `alignment.py`, `layers.py`, `solids.py`, `xdata.py`, `purge.py`,
-`build.py`, `phase1_build.py`, `skeleton.py`, `sub_alignment.py`.
+`build.py`, `phase1_build.py`, `skeleton.py`, `bridge_lines.py`.
 They are exercised manually via the checklist in `MANUAL-TASKS.md`.
 
 ## Run
