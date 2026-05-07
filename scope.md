@@ -376,6 +376,13 @@ where `top_of_cap` is derived from deck profile/cross slope minus superstructure
 - Bearing devices and pedestals (simple rectangular blocks)
 - Elevation table output (CSV/text; matches manual calculation within 0.01')
 
+**FG sampling strategy for footing top elevation (three-step):**
+1. **Default:** sample FG at the column centroid (matches "FG_surface_at_column" in the elevation chain).
+2. **Validation pass after footing geometry is built:** sample FG at each footing corner (or N perimeter points for non-rectangular footings); warn if any point fails the `min_depth_below_fg` cover requirement.
+3. **User override:** the engineer resolves a corner-check warning by setting `specified_top_of_footing_elevation` deeper. The override always wins in the elevation chain.
+
+Rationale: implicit "lowest-of-corners" sampling pushes the entire footing deeper than usually needed, inflating concrete volume and excavation cost. Engineers want a *check* that surfaces the corner issue so they can decide, not an automatic depth increase.
+
 ### Phase 2: Curved Geometry & Multi-Span (Weeks 19–28)
 
 **Goal:** Add curved bridge support as a geometry-mode switch, and extend to multi-span bridges.
@@ -459,6 +466,16 @@ Embed a lookup table of standard W-shapes (W10–W44 series) with dimensions: de
 
 Format: `data/aisc_w_shapes.json` — a dict keyed by designation (e.g., `"W36X150"`) with numeric fields. Loadable on macOS for unit testing (no C3D dependency).
 
+### Units & Metric Support
+
+**Source data is stored in AISC's native units (inches, lb/ft).** This keeps the JSON identical to AISC's published values, making manual spot-checks against the printed Manual trivial. The JSON declares its units explicitly via a top-level `"units"` field (e.g., `"imperial_inches"`).
+
+**Civil 3D bridge drawings in the US are typically in decimal feet.** Conversion happens at the geometry boundary — `src/units.py` provides pure-logic helpers (`in_to_ft`, `ft_to_in`, etc.) that the geometry-generation layer calls just before constructing swept-solid profiles. This single conversion point prevents drift from repeated conversions and keeps the data file canonical.
+
+**Metric (Canadian) projects** use CISC tables — same I-shape geometry, dimensioned in mm with weights in kg/m. Phase 1 ships Imperial only. The schema reserves a slot for a parallel `data/cisc_w_shapes_metric.json` and a corresponding `"drawing_units"` field on params. Full metric support is a Phase 4 deliverable; the design now ensures it's a no-breaking-change addition later.
+
+**Plate girders** are project-specific welded sections, not standard shapes — they are parameterized directly in JSON (web/flange dimensions per girder) rather than looked up. The Phase 4 parametric cross-section editor will unify the input model for both rolled and plate sections.
+
 ### Skeleton Creation via Sample Line API
 
 The tool creates skeleton geometry using Civil 3D's Sample Line API (`SampleLine`, `SampleLineGroup`):
@@ -520,10 +537,9 @@ Top of Cap                 = Bearing Seat Elevation
 Top of Column              = Top of Cap
                             - cap_depth
 
-Top of Footing             = max(
-                                FG_surface_at_column - min_depth_below_fg,
-                                specified_top_of_footing_elevation
-                              )
+Top of Footing             = specified_top_of_footing_elevation
+                              if specified else
+                              FG_surface_at_column - min_depth_below_fg
 
 Column Height              = Top of Column - Top of Footing
 ```
