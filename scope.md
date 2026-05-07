@@ -376,6 +376,13 @@ where `top_of_cap` is derived from deck profile/cross slope minus superstructure
 - Bearing devices and pedestals (simple rectangular blocks)
 - Elevation table output (CSV/text; matches manual calculation within 0.01')
 
+**FG sampling strategy for footing top elevation (three-step):**
+1. **Default:** sample FG at the column centroid (matches "FG_surface_at_column" in the elevation chain).
+2. **Validation pass after footing geometry is built:** sample FG at each footing corner (or N perimeter points for non-rectangular footings); warn if any point fails the `min_depth_below_fg` cover requirement.
+3. **User override:** the engineer resolves a corner-check warning by setting `specified_top_of_footing_elevation` deeper. The override always wins in the elevation chain.
+
+Rationale: implicit "lowest-of-corners" sampling pushes the entire footing deeper than usually needed, inflating concrete volume and excavation cost. Engineers want a *check* that surfaces the corner issue so they can decide, not an automatic depth increase.
+
 ### Phase 2: Curved Geometry & Multi-Span (Weeks 19–28)
 
 **Goal:** Add curved bridge support as a geometry-mode switch, and extend to multi-span bridges.
@@ -530,10 +537,9 @@ Top of Cap                 = Bearing Seat Elevation
 Top of Column              = Top of Cap
                             - cap_depth
 
-Top of Footing             = max(
-                                FG_surface_at_column - min_depth_below_fg,
-                                specified_top_of_footing_elevation
-                              )
+Top of Footing             = specified_top_of_footing_elevation
+                              if specified else
+                              FG_surface_at_column - min_depth_below_fg
 
 Column Height              = Top of Column - Top of Footing
 ```
