@@ -4,7 +4,7 @@ A Dynamo-based parametric bridge modeler that generates 3D AutoCAD solids direct
 
 ## Status
 
-**Work in progress.** See [docs/scope.md](docs/scope.md) for the full project scope and development plan.
+**Work in progress.** See [scope.md](/scope.md) for the full project scope and development plan.
 
 ## Problem
 
