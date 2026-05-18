@@ -218,6 +218,11 @@ def _build_haunch_solid(
     girder_xy = Vector3d(dx / plan_len, dy / plan_len, 0.0)
     cross_xy = Vector3d(-dy / plan_len, dx / plan_len, 0.0)
 
+    # `haunch_geometry` places `h_left_ft` / `h_right_ft` at the profile-u
+    # positions that map to alignment-LEFT / alignment-RIGHT after the
+    # Matrix3d transform below (cross_xy = 90° CCW from girder direction
+    # → profile +u lands on alignment-LEFT). See haunch_geometry module
+    # docstring for the derivation.
     verts = hg.haunch_profile_vertices_ft(bf_ft, h_left_ft, h_right_ft)
 
     pline = None

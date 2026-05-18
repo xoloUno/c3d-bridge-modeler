@@ -51,10 +51,15 @@ def test_bottom_edge_spans_flange_width():
 # ----------------------------------------------------------------------
 
 def test_top_corners_use_h_left_and_h_right():
+    """Profile +u side maps to alignment-LEFT after the Civil-3D-side
+    cross_xy = 90°-CCW transform, so `h_left_ft` is placed at the
+    (+bf/2, ...) vertex and `h_right_ft` at the (-bf/2, ...) vertex.
+    See `haunch_geometry.py` module docstring."""
     verts = hg.haunch_profile_vertices_ft(bf_ft=1.0, h_left_ft=0.6, h_right_ft=0.4)
-    # V2 = top-right at (+bf/2, h_right); V3 = top-left at (-bf/2, h_left)
-    assert verts[2] == pytest.approx((0.5, 0.4))
-    assert verts[3] == pytest.approx((-0.5, 0.6))
+    # V2 = alignment-LEFT top at (+bf/2, h_left_ft)
+    # V3 = alignment-RIGHT top at (-bf/2, h_right_ft)
+    assert verts[2] == pytest.approx((0.5, 0.6))
+    assert verts[3] == pytest.approx((-0.5, 0.4))
 
 
 def test_symmetric_input_is_a_rectangle():
@@ -69,23 +74,28 @@ def test_symmetric_input_is_a_rectangle():
     assert verts[2][0] - verts[3][0] == pytest.approx(1.0)
 
 
-def test_asymmetric_top_edge_slopes():
-    """For h_left > h_right (girder on the down-slope side, left tip closer
-    to crown), the top edge slopes down going right."""
+def test_asymmetric_top_edge_slopes_correctly_in_profile():
+    """For h_left > h_right: the +u (alignment-LEFT) top vertex sits
+    HIGHER in profile-v than the -u (alignment-RIGHT) top vertex."""
     verts = hg.haunch_profile_vertices_ft(bf_ft=1.0, h_left_ft=0.51, h_right_ft=0.49)
-    assert verts[3][1] > verts[2][1]
+    # V2 is the +u top vertex (alignment-LEFT); V3 is -u (alignment-RIGHT)
+    assert verts[2][1] > verts[3][1]
+    assert verts[2] == pytest.approx((0.5, 0.51))
+    assert verts[3] == pytest.approx((-0.5, 0.49))
 
 
 # ----------------------------------------------------------------------
 # Winding: clockwise from bottom-left, matching girder_geometry
 # ----------------------------------------------------------------------
 
-def test_winding_clockwise_from_bottom_left():
+def test_winding_traces_full_outline():
+    """4 vertices: two at v=0 (bottom edge), two at v>0 (top edge);
+    one of each on each side of u=0 (left/right of web)."""
     verts = hg.haunch_profile_vertices_ft(bf_ft=1.0, h_left_ft=0.5, h_right_ft=0.5)
-    assert verts[0][0] < 0 and verts[0][1] == 0.0  # bottom-left
-    assert verts[1][0] > 0 and verts[1][1] == 0.0  # bottom-right
-    assert verts[2][0] > 0 and verts[2][1] > 0.0   # top-right
-    assert verts[3][0] < 0 and verts[3][1] > 0.0   # top-left
+    assert verts[0][0] < 0 and verts[0][1] == 0.0  # bottom at -u
+    assert verts[1][0] > 0 and verts[1][1] == 0.0  # bottom at +u
+    assert verts[2][0] > 0 and verts[2][1] > 0.0   # top at +u
+    assert verts[3][0] < 0 and verts[3][1] > 0.0   # top at -u
 
 
 # ----------------------------------------------------------------------
