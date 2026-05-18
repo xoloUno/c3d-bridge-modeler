@@ -86,6 +86,77 @@ def test_compute_chain_descends_monotonically():
                 assert endpt.top_of_deck > endpt.top_of_girder_flange
                 assert endpt.top_of_girder_flange > endpt.bottom_of_girder
                 assert endpt.bottom_of_girder > endpt.bearing_seat
+                assert endpt.haunch_h_left_ft > 0.0
+                assert endpt.haunch_h_right_ft > 0.0
+
+
+# ----------------------------------------------------------------------
+# Haunch dims at flange tips
+# ----------------------------------------------------------------------
+
+def test_haunch_dims_match_centerline_on_flat_deck(tmp_path):
+    """Zero cross-slope → h_left == h_right == haunch_depth (rectangular haunch)."""
+    raw = _load_example_raw()
+    raw["deck_cross_slope_left"] = 0.0
+    raw["deck_cross_slope_right"] = 0.0
+    params = _params_from(raw, tmp_path)
+    table = aisc.load()
+    result = pc.compute(params, table, profile_elevation_at=_flat_profile_at(120.0))
+
+    haunch_depth = params.superstructures[0].haunch_depth
+    for g in result.spans[0].girders:
+        for endpt in (g.start, g.end):
+            assert math.isclose(endpt.haunch_h_left_ft, haunch_depth, abs_tol=1e-9)
+            assert math.isclose(endpt.haunch_h_right_ft, haunch_depth, abs_tol=1e-9)
+
+
+def test_haunch_dims_average_to_haunch_depth_on_crowned_deck():
+    """Linear cross-slope → (h_left + h_right) / 2 == haunch_depth for any
+    girder fully on one side of the crown. Tested against the committed
+    example (2% symmetric crown)."""
+    params = p1.load(EXAMPLE_PARAMS)
+    table = aisc.load()
+    result = pc.compute(params, table, profile_elevation_at=_flat_profile_at(120.0))
+
+    haunch_depth = params.superstructures[0].haunch_depth
+    for g in result.spans[0].girders:
+        for endpt in (g.start, g.end):
+            avg = (endpt.haunch_h_left_ft + endpt.haunch_h_right_ft) / 2.0
+            assert math.isclose(avg, haunch_depth, abs_tol=1e-9)
+
+
+def test_haunch_left_higher_on_left_of_crown(tmp_path):
+    """For a girder LEFT of crown with symmetric -2% slope:
+    deck drops going further LEFT, so the LEFT flange tip is LOWER than
+    centerline. h_left = haunch_depth + (negative delta) < haunch_depth.
+    Conversely h_right > haunch_depth."""
+    params = p1.load(EXAMPLE_PARAMS)
+    table = aisc.load()
+    result = pc.compute(params, table, profile_elevation_at=_flat_profile_at(120.0))
+
+    haunch_depth = params.superstructures[0].haunch_depth
+    # G1, G2 are left of crown (offset 0)
+    for g_idx in (0, 1):
+        endpt = result.spans[0].girders[g_idx].start
+        assert endpt.girder_offset < 0
+        assert endpt.haunch_h_left_ft < haunch_depth
+        assert endpt.haunch_h_right_ft > haunch_depth
+
+
+def test_haunch_delta_matches_cross_slope_times_half_bf():
+    """For W36X150 (bf=12 in = 1 ft) at -2% cross-slope, the delta between
+    h_left/h_right and haunch_depth is (-0.02) * 0.5 = -0.01 ft on the
+    crown-far side (and +0.01 on the crown-near side)."""
+    params = p1.load(EXAMPLE_PARAMS)
+    table = aisc.load()
+    result = pc.compute(params, table, profile_elevation_at=_flat_profile_at(120.0))
+
+    haunch_depth = params.superstructures[0].haunch_depth
+    g1_start = result.spans[0].girders[0].start  # left of crown
+    expected_left = haunch_depth - 0.01
+    expected_right = haunch_depth + 0.01
+    assert math.isclose(g1_start.haunch_h_left_ft, expected_left, abs_tol=1e-9)
+    assert math.isclose(g1_start.haunch_h_right_ft, expected_right, abs_tol=1e-9)
 
 
 def test_compute_outermost_girders_lower_than_inner_with_crown():

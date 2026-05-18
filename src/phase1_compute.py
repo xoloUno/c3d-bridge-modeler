@@ -65,6 +65,8 @@ class GirderAtBearing:
     top_of_girder_flange: float
     bottom_of_girder: float
     bearing_seat: float          # ft (informational; refined in Phase 1b)
+    haunch_h_left_ft: float      # ft, haunch height at left flange tip (u = -bf/2)
+    haunch_h_right_ft: float     # ft, haunch height at right flange tip (u = +bf/2)
 
 
 @dataclass(frozen=True)
@@ -148,6 +150,7 @@ def compute(
         )
 
         girder_depth_ft = _girder_depth_ft(super_, aisc_table)
+        flange_width_ft = _flange_width_ft(super_, aisc_table)
 
         deck_cl_offset_start = params.deck_cl_offset_from_alignment.at(start_bearing_station)
         deck_cl_offset_end = params.deck_cl_offset_from_alignment.at(end_bearing_station)
@@ -164,6 +167,7 @@ def compute(
                 skew_deg=start_support.skew_angle,
                 deck_cl_offset_from_alignment=deck_cl_offset_start,
                 girder_depth_ft=girder_depth_ft,
+                flange_width_ft=flange_width_ft,
                 bearing_device_height_ft=bearing_device_height_ft,
             )
             end_state = _girder_at_bearing(
@@ -176,6 +180,7 @@ def compute(
                 skew_deg=end_support.skew_angle,
                 deck_cl_offset_from_alignment=deck_cl_offset_end,
                 girder_depth_ft=girder_depth_ft,
+                flange_width_ft=flange_width_ft,
                 bearing_device_height_ft=bearing_device_height_ft,
             )
             girders_out.append(
@@ -223,6 +228,18 @@ def _girder_depth_ft(
     if super_.girder_type == "W_SHAPE":
         shape = aisc.get(aisc_table, super_.girder_shape)
         return units.in_to_ft(shape.d_in)
+    raise Phase1ComputeError(
+        f"girder_type {super_.girder_type!r} not yet supported by orchestrator "
+        f"(PLATE_GIRDER and others are deferred to follow-up slices)"
+    )
+
+
+def _flange_width_ft(
+    super_: p1.Superstructure, aisc_table: Dict[str, aisc.WShape]
+) -> float:
+    if super_.girder_type == "W_SHAPE":
+        shape = aisc.get(aisc_table, super_.girder_shape)
+        return units.in_to_ft(shape.bf_in)
     raise Phase1ComputeError(
         f"girder_type {super_.girder_type!r} not yet supported by orchestrator "
         f"(PLATE_GIRDER and others are deferred to follow-up slices)"
@@ -294,6 +311,7 @@ def _girder_at_bearing(
     skew_deg: float,
     deck_cl_offset_from_alignment: float,
     girder_depth_ft: float,
+    flange_width_ft: float,
     bearing_device_height_ft: float,
 ) -> GirderAtBearing:
     cos_skew = math.cos(math.radians(skew_deg))
@@ -318,6 +336,36 @@ def _girder_at_bearing(
         girder_depth=girder_depth_ft,
         bearing_device_height=bearing_device_height_ft,
     )
+
+    # Haunch heights at the flange tips: evaluate top_of_deck at the
+    # tips' perpendicular offsets, subtract deck_depth and the (flat)
+    # top_of_girder_flange Z. For a girder fully on one side of the
+    # crown with constant cross-slope, both are constant along the
+    # girder, so a constant-profile sweep on the Civil-3D side is
+    # accurate. Crown-straddling and station-varying crown / deck-CL
+    # offsets are handled correctly by this per-bearing-line evaluation
+    # (though the Phase 1 baseline sweep uses only the start values —
+    # see `haunches.py` for the build-time approximation).
+    half_bf = flange_width_ft / 2.0
+    top_of_deck_left_tip = elevation.top_of_deck_at_offset(
+        profile_elevation=profile_elevation,
+        deck_profile_offset=params.deck_profile_offset,
+        crown_offset=crown_offset_here,
+        cross_slope_left_pct=params.deck_cross_slope_left,
+        cross_slope_right_pct=params.deck_cross_slope_right,
+        girder_offset=perpendicular_offset - half_bf,
+    )
+    top_of_deck_right_tip = elevation.top_of_deck_at_offset(
+        profile_elevation=profile_elevation,
+        deck_profile_offset=params.deck_profile_offset,
+        crown_offset=crown_offset_here,
+        cross_slope_left_pct=params.deck_cross_slope_left,
+        cross_slope_right_pct=params.deck_cross_slope_right,
+        girder_offset=perpendicular_offset + half_bf,
+    )
+    haunch_h_left = top_of_deck_left_tip - super_.deck_depth - sup.top_of_girder_flange
+    haunch_h_right = top_of_deck_right_tip - super_.deck_depth - sup.top_of_girder_flange
+
     return GirderAtBearing(
         support_id=support_id,
         bearing_station=bearing_station,
@@ -327,6 +375,8 @@ def _girder_at_bearing(
         top_of_girder_flange=sup.top_of_girder_flange,
         bottom_of_girder=sup.bottom_of_girder,
         bearing_seat=sup.bearing_seat,
+        haunch_h_left_ft=haunch_h_left,
+        haunch_h_right_ft=haunch_h_right,
     )
 
 
@@ -359,7 +409,8 @@ def format_text_report(result: Phase1ComputeResult) -> str:
         header = (
             f"   {'girder':<8} {'support':<10} {'station':>10} "
             f"{'perp_off':>9} {'along_brg':>10} "
-            f"{'top_deck':>10} {'top_flg':>10} {'bot_grdr':>10} {'brg_seat':>10}"
+            f"{'top_deck':>10} {'top_flg':>10} {'bot_grdr':>10} {'brg_seat':>10} "
+            f"{'hnch_L':>8} {'hnch_R':>8}"
         )
         lines.append(header)
         for g in span.girders:
@@ -369,7 +420,8 @@ def format_text_report(result: Phase1ComputeResult) -> str:
                     f"{endpt.bearing_station:>10.2f} "
                     f"{endpt.girder_offset:>9.3f} {endpt.along_bearing_offset:>10.3f} "
                     f"{endpt.top_of_deck:>10.3f} {endpt.top_of_girder_flange:>10.3f} "
-                    f"{endpt.bottom_of_girder:>10.3f} {endpt.bearing_seat:>10.3f}"
+                    f"{endpt.bottom_of_girder:>10.3f} {endpt.bearing_seat:>10.3f} "
+                    f"{endpt.haunch_h_left_ft:>8.3f} {endpt.haunch_h_right_ft:>8.3f}"
                 )
         lines.append("")
     return "\n".join(lines)

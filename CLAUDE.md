@@ -76,11 +76,16 @@ test/                  Test parameter files and expected outputs
 - Edge-of-deck + bridge-CL reference polylines (`src/bridge_lines.py`) — `BRIDGE-NOPLOT` layer (locked + non-plotting), skewed bearing endpoint geometry, anchored at support stations
 - Pure-math I-shape profile builder (`src/girder_geometry.py`) — closed 12-vertex AISC W-shape outline in profile-local feet
 - Girder swept solids (`src/girders.py`) — I-shape `Region` pre-oriented in a vertical plane perpendicular to the in-plan girder direction (web plumb), swept along a 3D `Line` from start to end bearing via `Solid3d.CreateSweptSolid` with `Align=NoAlignment` + `Bank=False`. `BRIDGE-GIRDER` layer (red), xdata `{element, span_id, girder_index, girder_shape, id}`. Re-run regenerates (purges every `BRIDGE-GIRDER` entity first); skeleton on other layers untouched. Verified 2026-05-18 on `D-E` alignment, 4 × W36X150 girders, depth-measured 2.9917 ft against AISC 35.9 in.
-- 117 macOS unit tests covering the pure-logic layer
+- Phase 1 compute extended with per-bearing-line `haunch_h_left_ft` / `haunch_h_right_ft` — flange-tip top-of-deck lookups via the existing elevation chain
+- Pure-math haunch profile builder (`src/haunch_geometry.py`) — closed 4-vertex trapezoid (bottom on top of flange, top sloped to deck bottom)
+- 134 macOS unit tests covering the pure-logic layer
 - C3D-side build orchestrator (`src/phase1_build.py`) and Dynamo node body (`src/phase1_node.py`) verified end-to-end on a real `D-E` alignment with 10° skew
 
+### Code written, awaiting C3D verification
+**Haunch swept solids** (`src/haunches.py`). 4-vertex trapezoid profile from `haunch_geometry.haunch_profile_vertices_ft`, anchored at `(start_x, start_y, top_of_girder_flange)` on top of each girder, swept along the same 3D `Line` path as the girder using the same `Align=NoAlignment` + `Bank=False` orientation. Constant-profile baseline: uses the START bearing's `h_left` / `h_right` (exact match to end bearing for typical Phase 1 — constant cross-slope, no crown-straddling, constant `crown_offset` / `deck_cl_offset_from_alignment`). Layer `BRIDGE-DECK-HAUNCH` (color 51), xdata `{element, span_id, girder_index, id}`. Re-run regenerates; girder & skeleton layers untouched. Hexagonal-with-chamfers cross-section (per project memory) is deferred to a later slice.
+
 ### Next up
-Haunches (parallelogram cross-section sitting on top flange), then deck solid lofted between cross-section profiles at the bearing lines.
+Deck solid lofted between cross-section profiles at the bearing lines.
 
 ### Phase 0 (complete, 2026-05-06)
 Foundation & proof-of-concept verified — see `MANUAL-TASKS.md` for the verification record. The Phase 0 pipeline (JSON params → 3 `Solid3d` boxes on `BRIDGE-*` layers with xdata) is the baseline Phase 1 builds on.

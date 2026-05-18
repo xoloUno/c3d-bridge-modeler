@@ -20,6 +20,9 @@ Pipeline:
                                  ├─▶ girders.ensure_phase1_girders()
                                  │         (steel girder swept solids on
                                  │          BRIDGE-GIRDER; regenerated each run)
+                                 ├─▶ haunches.ensure_phase1_haunches()
+                                 │         (haunch trapezoid swept solids on
+                                 │          BRIDGE-DECK-HAUNCH; regenerated)
                                  ▼
                   format_text_report(...)
                                  ▼
@@ -43,6 +46,7 @@ import alignment as al
 import skeleton
 import bridge_lines
 import girders
+import haunches
 
 
 def main(repo_root: str, params_path: str) -> str:
@@ -79,6 +83,7 @@ def _run(params_path: str) -> str:
     skeleton_summary = ""
     sub_alignment_summary = ""
     girder_summary = ""
+    haunch_summary = ""
     with c3d_doc.locked_document():
         with c3d_doc.transaction() as tr:
             print(f"[phase1_build] resolving alignment {params.alignment_name!r}")
@@ -141,6 +146,22 @@ def _run(params_path: str) -> str:
             )
             print(f"[phase1_build] {girder_summary}")
 
+            print("[phase1_build] regenerating haunch solids")
+            hn = haunches.ensure_phase1_haunches(
+                tr=tr,
+                db=db,
+                alignment_obj=alignment_obj,
+                params=params,
+                compute_result=result,
+                aisc_table=aisc_table,
+            )
+            haunch_summary = (
+                f"Haunches: built {len(hn['created'])} "
+                f"({', '.join(name for name, _ in hn['created']) or '—'}); "
+                f"purged {hn['purged']} prior entit{'y' if hn['purged'] == 1 else 'ies'}"
+            )
+            print(f"[phase1_build] {haunch_summary}")
+
             tr.Commit()
 
     report = phase1_compute.format_text_report(result)
@@ -150,5 +171,6 @@ def _run(params_path: str) -> str:
     for line in report.splitlines():
         print(f"[phase1_build] {line}")
     return (
-        f"{skeleton_summary}\n{sub_alignment_summary}\n{girder_summary}\n\n{report}"
+        f"{skeleton_summary}\n{sub_alignment_summary}\n"
+        f"{girder_summary}\n{haunch_summary}\n\n{report}"
     )
