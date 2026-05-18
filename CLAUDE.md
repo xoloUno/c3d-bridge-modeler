@@ -75,13 +75,9 @@ test/                  Test parameter files and expected outputs
 - Sample-line skeleton at supports (`src/skeleton.py`) — `BRIDGE-SUPPORTS` group, idempotent across runs
 - Edge-of-deck + bridge-CL reference polylines (`src/bridge_lines.py`) — `BRIDGE-NOPLOT` layer (locked + non-plotting), skewed bearing endpoint geometry, anchored at support stations
 - Pure-math I-shape profile builder (`src/girder_geometry.py`) — closed 12-vertex AISC W-shape outline in profile-local feet
+- Girder swept solids (`src/girders.py`) — I-shape `Region` pre-oriented in a vertical plane perpendicular to the in-plan girder direction (web plumb), swept along a 3D `Line` from start to end bearing via `Solid3d.CreateSweptSolid` with `Align=NoAlignment` + `Bank=False`. `BRIDGE-GIRDER` layer (red), xdata `{element, span_id, girder_index, girder_shape, id}`. Re-run regenerates (purges every `BRIDGE-GIRDER` entity first); skeleton on other layers untouched. Verified 2026-05-18 on `D-E` alignment, 4 × W36X150 girders, depth-measured 2.9917 ft against AISC 35.9 in.
 - 117 macOS unit tests covering the pure-logic layer
 - C3D-side build orchestrator (`src/phase1_build.py`) and Dynamo node body (`src/phase1_node.py`) verified end-to-end on a real `D-E` alignment with 10° skew
-
-### Code written, awaiting C3D verification
-**Girder swept solids** (`src/girders.py`). I-shape `Region` from AISC dims via `girder_geometry.i_shape_profile_vertices_ft`, profile pre-oriented in a vertical plane perpendicular to the in-plan girder direction (web plumb), swept along a 3D `Line` path from `(start_x, start_y, top_of_flange_z)` to `(end_x, end_y, top_of_flange_z)` via `Solid3d.CreateSweptSolid` with `Align=NoAlignment` + `Bank=False` so the cross-section orientation is preserved through graded paths. `BRIDGE-GIRDER` layer (red), xdata `{element, span_id, girder_index, girder_shape, id}`. Re-run regenerates solids (purges every `BRIDGE-GIRDER` entity first); skeleton elements on other layers are untouched.
-
-Wired into `phase1_build.py` after `bridge_lines.ensure_phase1_bridge_lines`. Needs the Civil-3D-side verification documented in `MANUAL-TASKS.md` ("Phase 1 girder solids").
 
 ### Next up
 Haunches (parallelogram cross-section sitting on top flange), then deck solid lofted between cross-section profiles at the bearing lines.

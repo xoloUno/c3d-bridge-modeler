@@ -236,7 +236,7 @@ contents listed below.
       they get recreated at the shifted positions, re-run, confirm
       a `BRIDGE-CL` polyline now appears between the two edges.
 
-### Phase 1 girder swept-solid verification
+### Phase 1 girder swept-solid verification — VERIFIED 2026-05-18 (core)
 First 3D output of the bridge model. The graph creates one
 `Solid3d` per girder, swept along a 3D path from the start bearing to
 the end bearing. The cross-section is the AISC I-shape; the web stays
@@ -246,35 +246,38 @@ Solids regenerate every run (no preservation, unlike skeleton
 elements) — `purged` in the summary counts entities deleted before
 the rebuild.
 
-- [ ] Bump the reload trigger in `src/phase1_node.py` and rerun the
+- [x] Bump the reload trigger in `src/phase1_node.py` and rerun the
       graph.
-- [ ] Watch node summary now includes a third line:
+- [x] Watch node summary now includes a third line:
       `Girders: built N (SPAN-1.G1, SPAN-1.G2, ...); purged M prior
       entities` — `N` matches the `girder_count` from your local
       params, and `M = 0` on the first run after this slice lands
       (any subsequent run shows `M = N`).
-- [ ] A new layer `BRIDGE-GIRDER` is present in the Layer Properties
+- [x] A new layer `BRIDGE-GIRDER` is present in the Layer Properties
       Manager (red by default — adjust in your project template if
       desired).
-- [ ] In ModelSpace, `N` `Solid3d` entities exist on `BRIDGE-GIRDER`.
+- [x] In ModelSpace, `N` `Solid3d` entities exist on `BRIDGE-GIRDER`.
       Use `QSELECT` filtered by Object = `3D Solid` and Layer =
       `BRIDGE-GIRDER`.
-- [ ] **Plan view** (top): each girder runs from its start bearing
+- [x] **Plan view** (top): each girder runs from its start bearing
       point to its end bearing point on the same in-plan path as
       the sample-line endpoint at each support.
-- [ ] **Front elevation** (look perpendicular to alignment): girders
+- [x] **Front elevation** (look perpendicular to alignment): girders
       appear as parallelograms — top and bottom edges parallel,
       sloped to match the profile grade; verticals on the left and
       right ends. The top edge of each girder is at the
       `top_of_girder_flange` elevation from the elevation report.
-- [ ] **Section cut** perpendicular to a girder at midspan (use
+- [x] **Section cut** perpendicular to a girder at midspan (use
       `SECTIONPLANE` then `LIVESECTION`): the cross-section is the
       AISC I-shape with web vertical (plumb), top flange wider than
       web, no twist or banking.
-- [ ] Cross-section dimensions match the W-shape: top flange width =
+- [x] Cross-section dimensions match the W-shape: top flange width =
       `bf_in / 12` ft (e.g. W36X150: 1.000 ft), depth = `d_in / 12`
       ft (W36X150: 2.992 ft). Measure with `DIST` between flange
       tips, between top of top flange and bottom of bottom flange.
+      _(Confirmed 2026-05-18: W36X150 depth = 2.9917 ft.)_
+
+Remaining low-risk checks (file later if regressions appear):
 - [ ] `XDLIST` on one girder shows `BRIDGE_MODELER` xdata with payload
       like `{"element":"girder","span_id":"SPAN-1","girder_index":2,
       "girder_shape":"W36X150","id":"SPAN-1.G2"}`.
