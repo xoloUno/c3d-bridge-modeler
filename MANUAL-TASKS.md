@@ -102,8 +102,8 @@ contents listed below.
       and (c) `PROPERTYSETDEFINE` lists `BRIDGE_IFC` with the four
       fields.
 
-### AISC W-shape table spot-check
-- [ ] Open `data/aisc_w_shapes.json` and verify a sample of shape
+### AISC W-shape table spot-check — VERIFIED 2026-05-18
+- [x] Open `data/aisc_w_shapes.json` and verify a sample of shape
       dimensions against AISC Steel Construction Manual (v15 or v16).
       Suggested sample (covers light, medium, and heavy bridge girder
       sizes): W14X22, W18X35, W24X62, W30X90, W36X150, W40X167, W44X230.
@@ -235,6 +235,58 @@ contents listed below.
       value, delete the existing `BRIDGE-EDGE-L`/`-R` polylines so
       they get recreated at the shifted positions, re-run, confirm
       a `BRIDGE-CL` polyline now appears between the two edges.
+
+### Phase 1 girder swept-solid verification
+First 3D output of the bridge model. The graph creates one
+`Solid3d` per girder, swept along a 3D path from the start bearing to
+the end bearing. The cross-section is the AISC I-shape; the web stays
+plumb on graded paths because `SweepOptions.Align = NoAlignment` keeps
+the pre-oriented profile fixed in world space throughout the sweep.
+Solids regenerate every run (no preservation, unlike skeleton
+elements) — `purged` in the summary counts entities deleted before
+the rebuild.
+
+- [ ] Bump the reload trigger in `src/phase1_node.py` and rerun the
+      graph.
+- [ ] Watch node summary now includes a third line:
+      `Girders: built N (SPAN-1.G1, SPAN-1.G2, ...); purged M prior
+      entities` — `N` matches the `girder_count` from your local
+      params, and `M = 0` on the first run after this slice lands
+      (any subsequent run shows `M = N`).
+- [ ] A new layer `BRIDGE-GIRDER` is present in the Layer Properties
+      Manager (red by default — adjust in your project template if
+      desired).
+- [ ] In ModelSpace, `N` `Solid3d` entities exist on `BRIDGE-GIRDER`.
+      Use `QSELECT` filtered by Object = `3D Solid` and Layer =
+      `BRIDGE-GIRDER`.
+- [ ] **Plan view** (top): each girder runs from its start bearing
+      point to its end bearing point on the same in-plan path as
+      the sample-line endpoint at each support.
+- [ ] **Front elevation** (look perpendicular to alignment): girders
+      appear as parallelograms — top and bottom edges parallel,
+      sloped to match the profile grade; verticals on the left and
+      right ends. The top edge of each girder is at the
+      `top_of_girder_flange` elevation from the elevation report.
+- [ ] **Section cut** perpendicular to a girder at midspan (use
+      `SECTIONPLANE` then `LIVESECTION`): the cross-section is the
+      AISC I-shape with web vertical (plumb), top flange wider than
+      web, no twist or banking.
+- [ ] Cross-section dimensions match the W-shape: top flange width =
+      `bf_in / 12` ft (e.g. W36X150: 1.000 ft), depth = `d_in / 12`
+      ft (W36X150: 2.992 ft). Measure with `DIST` between flange
+      tips, between top of top flange and bottom of bottom flange.
+- [ ] `XDLIST` on one girder shows `BRIDGE_MODELER` xdata with payload
+      like `{"element":"girder","span_id":"SPAN-1","girder_index":2,
+      "girder_shape":"W36X150","id":"SPAN-1.G2"}`.
+- [ ] Re-run the graph (no params changes). Summary shows
+      `Girders: built N (...); purged N prior entities` —
+      confirms the regenerate-each-run policy. Visual result is
+      identical to the prior run.
+- [ ] **Hidden visual style** (`VSCURRENT → Hidden`): girders render
+      with hidden lines suppressed; no Z-fighting or missing faces.
+- [ ] Change `superstructures[0].girder_shape` to a different size
+      (e.g. W24X62), bump the reload trigger, rerun. Girders rebuild
+      with the new cross-section dimensions at the same positions.
 
 ## Operational notes for future runs
 

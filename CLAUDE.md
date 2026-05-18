@@ -74,16 +74,17 @@ test/                  Test parameter files and expected outputs
 - End-to-end compute orchestrator (`src/phase1_compute.py`) — skew correction, deck-CL offset shift, per-girder per-bearing-line elevations, formatted text report
 - Sample-line skeleton at supports (`src/skeleton.py`) — `BRIDGE-SUPPORTS` group, idempotent across runs
 - Edge-of-deck + bridge-CL reference polylines (`src/bridge_lines.py`) — `BRIDGE-NOPLOT` layer (locked + non-plotting), skewed bearing endpoint geometry, anchored at support stations
-- 101 macOS unit tests covering the pure-logic layer
+- Pure-math I-shape profile builder (`src/girder_geometry.py`) — closed 12-vertex AISC W-shape outline in profile-local feet
+- 117 macOS unit tests covering the pure-logic layer
 - C3D-side build orchestrator (`src/phase1_build.py`) and Dynamo node body (`src/phase1_node.py`) verified end-to-end on a real `D-E` alignment with 10° skew
 
-### Next up — first 3D output
-**Girder swept solids.** Per `scope.md` Phase 1: build the I-shape `Region` from AISC dims (`bf_in`, `tf_in`, `tw_in`, `d_in`), create a 3D `Line` path from `(start_x, start_y, top_of_flange_z)` to `(end_x, end_y, top_of_flange_z)` per girder, call `Solid3d.CreateSweptSolid(profile, path, sweepOptions)` with `Bank=False` (girder web stays vertical even on a graded path). Place on `BRIDGE-GIRDER` with xdata. Re-run behavior: solids regenerate (unlike skeleton elements, which are preserved per the two-mode workflow).
+### Code written, awaiting C3D verification
+**Girder swept solids** (`src/girders.py`). I-shape `Region` from AISC dims via `girder_geometry.i_shape_profile_vertices_ft`, profile pre-oriented in a vertical plane perpendicular to the in-plan girder direction (web plumb), swept along a 3D `Line` path from `(start_x, start_y, top_of_flange_z)` to `(end_x, end_y, top_of_flange_z)` via `Solid3d.CreateSweptSolid` with `Align=NoAlignment` + `Bank=False` so the cross-section orientation is preserved through graded paths. `BRIDGE-GIRDER` layer (red), xdata `{element, span_id, girder_index, girder_shape, id}`. Re-run regenerates solids (purges every `BRIDGE-GIRDER` entity first); skeleton elements on other layers are untouched.
 
-After girders: haunches (parallelogram cross-section sitting on top flange), then deck solid lofted between cross-section profiles at the bearing lines.
+Wired into `phase1_build.py` after `bridge_lines.ensure_phase1_bridge_lines`. Needs the Civil-3D-side verification documented in `MANUAL-TASKS.md` ("Phase 1 girder solids").
 
-### Open follow-up (filed as a chip — small polish)
-- Asymmetric sample lines for offset deck CL: when `deck_cl_offset_from_alignment` is non-zero, sample line endpoints should extend asymmetrically from the alignment crossing so they cover the full deck width with overhang on both sides.
+### Next up
+Haunches (parallelogram cross-section sitting on top flange), then deck solid lofted between cross-section profiles at the bearing lines.
 
 ### Phase 0 (complete, 2026-05-06)
 Foundation & proof-of-concept verified — see `MANUAL-TASKS.md` for the verification record. The Phase 0 pipeline (JSON params → 3 `Solid3d` boxes on `BRIDGE-*` layers with xdata) is the baseline Phase 1 builds on.

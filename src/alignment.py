@@ -107,3 +107,42 @@ def elevation_at_station(profile_obj, station: float) -> float:
 
 def surface_elevation_at(surface_obj, x: float, y: float) -> float:
     return surface_obj.FindElevationAtXY(x, y)
+
+
+def point_on_skewed_bearing(
+    alignment_obj,
+    station: float,
+    skew_deg: float,
+    perp_offset: float,
+):
+    """XY of the point at perpendicular offset `perp_offset` from alignment,
+    *on the bearing line* skewed by `skew_deg` (CCW from perpendicular).
+
+    For zero skew, equivalent to `point_at_station(alignment, station,
+    perp_offset)`. For non-zero skew, the point shifts along the alignment
+    direction by `perp_offset × tan(skew_deg)` so that the chord from the
+    alignment crossing to the point lies on the skewed bearing line —
+    matching the skewed sample line endpoint that downstream geometry
+    (deck slab, abutment back of backwall, girder bearing points) lines up
+    with.
+
+    Sign convention matches Civil 3D's `PointLocation`: `+perp_offset` is
+    right of alignment when looking ahead-station, `-perp_offset` is left.
+    """
+    if skew_deg == 0.0:
+        return point_at_station(alignment_obj, station, perp_offset)
+
+    cx, cy = point_at_station(alignment_obj, station, 0.0)
+    alignment_dir_rad = direction_at_station(alignment_obj, station)
+    skew_rad = math.radians(skew_deg)
+    # `perp_left_dir` is the direction of the skewed bearing line going
+    # toward the LEFT side of alignment (math convention: +Y when alignment
+    # heads +X). For a point at C3D `+perp_offset` (right side), we go the
+    # opposite distance along this direction; `L = -perp_offset / cos(skew)`
+    # handles both signs correctly.
+    perp_left_dir = alignment_dir_rad + math.pi / 2.0 + skew_rad
+    L = -perp_offset / math.cos(skew_rad)
+    return (
+        cx + L * math.cos(perp_left_dir),
+        cy + L * math.sin(perp_left_dir),
+    )

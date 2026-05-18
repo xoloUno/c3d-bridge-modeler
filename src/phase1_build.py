@@ -17,16 +17,19 @@ Pipeline:
                                  │         (BRIDGE-EDGE-L, BRIDGE-EDGE-R, and
                                  │          BRIDGE-CL when deck CL ≠ alignment;
                                  │          polylines on BRIDGE-NOPLOT layer)
+                                 ├─▶ girders.ensure_phase1_girders()
+                                 │         (steel girder swept solids on
+                                 │          BRIDGE-GIRDER; regenerated each run)
                                  ▼
                   format_text_report(...)
                                  ▼
                   Watch node summary string
 
-Skeleton elements (sample lines, sub-alignments) are created on first run
-and preserved on subsequent runs — designers can move them between runs
-and the tool reads positions back. Solid geometry (deck, girders,
-haunches) is regenerated from JSON each run; that piece lands in a
-follow-up slice.
+Skeleton elements (sample lines, sub-alignments, edge / CL polylines)
+are created on first run and preserved on subsequent runs — designers
+can move them between runs and the tool reads positions back. Solid
+geometry (girders so far; deck + haunches + substructure to follow) is
+regenerated from JSON each run.
 """
 from __future__ import annotations
 
@@ -39,6 +42,7 @@ import c3d_doc
 import alignment as al
 import skeleton
 import bridge_lines
+import girders
 
 
 def main(repo_root: str, params_path: str) -> str:
@@ -74,6 +78,7 @@ def _run(params_path: str) -> str:
 
     skeleton_summary = ""
     sub_alignment_summary = ""
+    girder_summary = ""
     with c3d_doc.locked_document():
         with c3d_doc.transaction() as tr:
             print(f"[phase1_build] resolving alignment {params.alignment_name!r}")
@@ -120,6 +125,22 @@ def _run(params_path: str) -> str:
             )
             print(f"[phase1_build] {sub_alignment_summary}")
 
+            print("[phase1_build] regenerating girder solids")
+            gd = girders.ensure_phase1_girders(
+                tr=tr,
+                db=db,
+                alignment_obj=alignment_obj,
+                params=params,
+                compute_result=result,
+                aisc_table=aisc_table,
+            )
+            girder_summary = (
+                f"Girders: built {len(gd['created'])} "
+                f"({', '.join(name for name, _ in gd['created']) or '—'}); "
+                f"purged {gd['purged']} prior entit{'y' if gd['purged'] == 1 else 'ies'}"
+            )
+            print(f"[phase1_build] {girder_summary}")
+
             tr.Commit()
 
     report = phase1_compute.format_text_report(result)
@@ -128,4 +149,6 @@ def _run(params_path: str) -> str:
     print("[phase1_build] elevation report:")
     for line in report.splitlines():
         print(f"[phase1_build] {line}")
-    return f"{skeleton_summary}\n{sub_alignment_summary}\n\n{report}"
+    return (
+        f"{skeleton_summary}\n{sub_alignment_summary}\n{girder_summary}\n\n{report}"
+    )
