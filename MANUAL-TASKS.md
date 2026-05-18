@@ -291,7 +291,7 @@ Remaining low-risk checks (file later if regressions appear):
       (e.g. W24X62), bump the reload trigger, rerun. Girders rebuild
       with the new cross-section dimensions at the same positions.
 
-### Phase 1 haunch swept-solid verification
+### Phase 1 haunch swept-solid verification — VERIFIED 2026-05-18 (core)
 The haunch is the concrete pad between the girder top flange and the
 deck underside. Phase 1 baseline: 4-vertex trapezoid (flat bottom on
 flange, sloped top matching deck-bottom cross-slope), swept with the
@@ -300,20 +300,24 @@ same orientation strategy as girders. `BRIDGE-DECK-HAUNCH` layer
 project memory is deferred to a later slice — visual diff is small at
 typical haunch_depth values (~1").
 
-- [ ] Bump the reload trigger in `src/phase1_node.py` and rerun the
+- [x] Bump the reload trigger in `src/phase1_node.py` and rerun the
       graph.
-- [ ] Watch node summary now includes a fourth line:
+- [x] Watch node summary now includes a fourth line:
       `Haunches: built N (SPAN-1.G1.HAUNCH, SPAN-1.G2.HAUNCH, ...);
       purged M prior entities` — `N` matches `girder_count`.
-- [ ] The elevation report has two new rightmost columns `hnch_L` and
-      `hnch_R` — the haunch height at each flange tip. For the
-      committed example (2% symmetric crown, W36X150 → bf = 1.0 ft),
-      the delta between `hnch_L`/`hnch_R` and the global
-      `haunch_depth` param is ±0.01 ft on each side.
-- [ ] Layer `BRIDGE-DECK-HAUNCH` is present (color 51 by default).
-- [ ] `N` `Solid3d` entities exist on `BRIDGE-DECK-HAUNCH`. Each one
-      sits ON TOP of a girder, with bottom at the girder's top flange
-      and top tucked under the deck soffit.
+- [x] The elevation report has two new rightmost columns `hnch_L` and
+      `hnch_R` — the haunch height at each flange tip. _(Confirmed on
+      D-E alignment with super-elevated deck: ±0.01 ft delta around
+      haunch_depth = 0.25, consistent across all 4 girders.)_
+- [x] Layer `BRIDGE-DECK-HAUNCH` is present (color 51 by default).
+- [x] `N` `Solid3d` entities exist on `BRIDGE-DECK-HAUNCH`, each
+      sitting on top of its girder with bottom at the girder top
+      flange and top tucked under the deck soffit.
+- [x] Haunch tops slope in the same direction as the deck soffit —
+      caught a profile-mirror bug (commit 128162f) plus a stale-module
+      cache bug (commit 2e69aae) before this verification passed.
+
+Remaining low-risk checks (file later if regressions appear):
 - [ ] **Section cut** at midspan perpendicular to a girder: above the
       girder's I-shape, a trapezoid of width `bf` and height ≈
       `haunch_depth` is visible. Its top edge slopes — slightly tilted
