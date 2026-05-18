@@ -59,6 +59,7 @@ clr.AddReference("acdbmgd")
 
 from Autodesk.AutoCAD.DatabaseServices import (  # noqa: E402
     DBObjectCollection,
+    Entity,
     LoftOptions,
     OpenMode,
     Polyline,
@@ -167,6 +168,7 @@ def _build_deck_solid(alignment_obj, span):
     end_curves = None
     end_regions_dboc = None
     loft_curves = None
+    empty_guides = None
     try:
         start_region, start_pline, start_curves, start_regions_dboc = (
             _build_cross_section_region(alignment_obj, span.deck_start)
@@ -179,19 +181,24 @@ def _build_deck_solid(alignment_obj, span):
         loft_curves.Add(start_region)
         loft_curves.Add(end_region)
 
-        # No guide curves, no path — simple linear loft between two
-        # cross-sections in two different planes. Default LoftOptions
-        # produces a ruled-surface solid which is exactly what we want
-        # for a straight bridge deck.
+        # AutoCAD documents both `guideCurves` and `pathCurve` as
+        # nullable; in practice pythonnet 3 can't disambiguate overloads
+        # when None lands in two slots simultaneously
+        # (`TypeError: No method matches given arguments for
+        # CreateLoftedSolid`). Pass an empty `DBObjectCollection` for
+        # guides (semantically the same as null) and pin the overload
+        # explicitly via `.Overloads[]` to remove the typed-None
+        # ambiguity for `pathCurve` — same pattern documented in
+        # CLAUDE.md for `Alignment.Create` ObjectId-vs-string overloads.
+        empty_guides = DBObjectCollection()
         opts = LoftOptions()
 
         solid = Solid3d()
         try:
-            # `pathCurve` argument is the path along which to loft. For a
-            # plain two-cross-section loft (no path, no guides), pass None
-            # / null and AutoCAD generates the connecting ruled surface
-            # between the cross-sections.
-            solid.CreateLoftedSolid(loft_curves, None, None, opts)
+            create_lofted = solid.CreateLoftedSolid.Overloads[
+                DBObjectCollection, DBObjectCollection, Entity, LoftOptions
+            ]
+            create_lofted(loft_curves, empty_guides, None, opts)
         except Exception:
             solid.Dispose()
             raise
@@ -200,6 +207,8 @@ def _build_deck_solid(alignment_obj, span):
         # Disposal order: highest-level outputs first.
         if loft_curves is not None:
             loft_curves.Dispose()
+        if empty_guides is not None:
+            empty_guides.Dispose()
         if start_region is not None:
             start_region.Dispose()
         if start_regions_dboc is not None:
