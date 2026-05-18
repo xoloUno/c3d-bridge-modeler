@@ -177,6 +177,7 @@ def _run(params_path: str) -> str:
                 params=params,
                 compute_result=result,
                 aisc_table=aisc_table,
+                profile_elevation_at=profile_at,
             )
             deck_summary = (
                 f"Decks: built {len(dk['created'])} "
