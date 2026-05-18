@@ -111,15 +111,15 @@ contents listed below.
       should be in inches (decimal) and lb/ft. Report any discrepancies
       so we can correct the source data.
 
-### Phase 1 build verification — elevation report (no geometry yet)
-- [ ] Copy `test/params.phase1.example.json` to
+### Phase 1 build verification — elevation report (no geometry yet) — VERIFIED
+- [x] Copy `test/params.phase1.example.json` to
       `test/params.phase1.local.json` and edit it with real alignment,
       profile, EG, FG names from your reference drawing's data
       shortcuts. Adjust `begin_station`, `end_station`, `supports[].station`,
       and `supports[].bearing_offsets` to match the project. Confirm at
       least one `superstructures[].girder_shape` is a real AISC W-shape
       (e.g. W36X150) so AISC validation passes.
-- [ ] In Dynamo for Civil 3D, build `src/phase1_bridge.dyn`:
+- [x] In Dynamo for Civil 3D, build `src/phase1_bridge.dyn`:
       - `Directory Path` input → repo root
       - `File Path` input → `test/params.phase1.local.json`
       - Python Script node; paste contents of `src/phase1_node.py`;
@@ -127,20 +127,20 @@ contents listed below.
       - `Watch` node on the Python node's output
       - Save the graph as `src/phase1_bridge.dyn`
       - Python node engine MUST be set to CPython 3 (PythonNet 3)
-- [ ] Open the reference Civil 3D drawing with data shortcuts attached
-- [ ] Run the graph; `Watch` node displays the elevation report
+- [x] Open the reference Civil 3D drawing with data shortcuts attached
+- [x] Run the graph; `Watch` node displays the elevation report
       starting with `== SPAN-1 (... → ...) ==` and listing per-girder
       `top_deck`, `top_flg`, `bot_grdr`, `brg_seat` at start and end
       bearings
-- [ ] Cross-check one girder's elevations against a manual calculation
+- [x] Cross-check one girder's elevations against a manual calculation
       (e.g. interior girder G2 at the start bearing): `top_of_deck =
       profile_elev + deck_profile_offset + cross_slope/100 *
       |girder_offset - crown_offset|`. Match within 0.01 ft.
-- [ ] Confirm no `BRIDGE-*` layers or geometry are created — this
+- [x] Confirm no `BRIDGE-*` layers or geometry are created — this
       slice is read-only and informational
 
-### Phase 1 schema migration (skew + station-varying offsets)
-- [ ] Update `test/params.phase1.local.json` to the new schema:
+### Phase 1 schema migration (skew + station-varying offsets) — VERIFIED
+- [x] Update `test/params.phase1.local.json` to the new schema:
       - Add `perpendicular_deck_width_start` and `perpendicular_deck_width_end`
         (the engineer's intended perpendicular deck width).
       - Set EXACTLY ONE of (`left_edge_to_G1_*`, `Gn_to_right_edge_*`) per
@@ -150,35 +150,35 @@ contents listed below.
         of `{station, value}` for station-varying).
       - Confirm `crown_offset` is scalar OR array form (it now accepts
         both).
-- [ ] Re-run the graph; for skewed supports, the elevation-report numbers
+- [x] Re-run the graph; for skewed supports, the elevation-report numbers
       will shift slightly vs. the previous run because spacings are now
       correctly interpreted as along-bearing measurements (perpendicular
       offsets are derived via `× cos(skew)`).
-- [ ] Sample-line lengths now equal `perpendicular_deck_width / cos(skew)`
+- [x] Sample-line lengths now equal `perpendicular_deck_width / cos(skew)`
       + 2 ft overhang. For the 22 ft perpendicular deck at 10° skew, sample
       line should be ~24.34 ft (was 24.0 ft when spacings were treated as
       perpendicular).
 
-### Phase 1 sample-line skeleton verification
-- [ ] Bump the reload trigger in the Python node body (already at v2
+### Phase 1 sample-line skeleton verification — VERIFIED
+- [x] Bump the reload trigger in the Python node body (already at v2
       in committed `src/phase1_node.py`) and rerun the graph
-- [ ] Watch node summary first line reads
+- [x] Watch node summary first line reads
       `Skeleton: created N sample line(s), preserved 0 existing`
       where N matches the number of supports in your local params
-- [ ] In Civil 3D, `LIST` or Properties panel shows a Sample Line
+- [x] In Civil 3D, `LIST` or Properties panel shows a Sample Line
       Group named `BRIDGE-SUPPORTS` parented to your bridge alignment
-- [ ] Each sample line is named after its `support_id` (e.g. `ABUT-A`,
+- [x] Each sample line is named after its `support_id` (e.g. `ABUT-A`,
       `ABUT-B`); positions match support stations on the alignment
-- [ ] Sample lines are skewed by `support.skew_angle` from
+- [x] Sample lines are skewed by `support.skew_angle` from
       perpendicular (verify visually if non-zero skew; otherwise the
       lines are square to the alignment)
-- [ ] Sample line length = deck width + 2 ft (1 ft overhang on each
+- [x] Sample line length = deck width + 2 ft (1 ft overhang on each
       side); for a 22 ft deck the sample lines are 24 ft total
-- [ ] Re-run the graph: summary now reads
+- [x] Re-run the graph: summary now reads
       `Skeleton: created 0 sample line(s), preserved N existing` —
       confirms the skeleton is preserved across runs (designer edits
       will not be overwritten)
-- [ ] Optional: manually move one sample line in C3D (drag a station
+- [x] Optional: manually move one sample line in C3D (drag a station
       grip), rerun, confirm the moved line is preserved in place
 
 ### Phase 1 sample-line asymmetric extension for offset deck CL — VERIFIED 2026-05-07
@@ -202,36 +202,36 @@ contents listed below.
       `BRIDGE-EDGE-L` and `BRIDGE-EDGE-R` polylines (offset by the
       1 ft along-bearing overhang) at each support.
 
-### Phase 1 edge-of-deck and bridge-CL polyline verification
-- [ ] Bump the reload trigger (committed file is at v10) and rerun
+### Phase 1 edge-of-deck and bridge-CL polyline verification — VERIFIED
+- [x] Bump the reload trigger (committed file is at v10) and rerun
       the graph
-- [ ] Watch node now contains an additional summary line:
+- [x] Watch node now contains an additional summary line:
       `Bridge lines: created N (BRIDGE-EDGE-L, BRIDGE-EDGE-R, ...),
       preserved 0 (—)` on first run
-- [ ] A new layer `BRIDGE-NOPLOT` is added to the Layer Properties
+- [x] A new layer `BRIDGE-NOPLOT` is added to the Layer Properties
       Manager, with **Plot = No** and **Lock = Yes** (magenta color
       by default — adjust in your project template if desired)
-- [ ] In ModelSpace, two AutoCAD Polylines exist on `BRIDGE-NOPLOT`:
+- [x] In ModelSpace, two AutoCAD Polylines exist on `BRIDGE-NOPLOT`:
       one along the left edge of deck, one along the right edge.
       They span bearing-line-to-bearing-line and are snappable for
       DIMLINEAR / DIMRADIUS / DIMANGULAR.
-- [ ] If your local params have `deck_cl_offset_from_alignment` set
+- [x] If your local params have `deck_cl_offset_from_alignment` set
       to a non-zero scalar or array form, a third polyline
       `BRIDGE-CL` is created along the deck centerline. With the
       constant `0.0` default, no `BRIDGE-CL` polyline is created
       (the roadway alignment already runs along the deck CL).
-- [ ] `XDLIST` on one of the bridge polylines shows
+- [x] `XDLIST` on one of the bridge polylines shows
       `BRIDGE_MODELER` xdata with payload like
       `{"bridge_line":"BRIDGE-EDGE-L"}` — that's the tag the tool
       uses for idempotent find-or-create on subsequent runs.
-- [ ] Re-run the graph: summary now shows
+- [x] Re-run the graph: summary now shows
       `Bridge lines: created 0 (—), preserved N (...)` — polylines
       are preserved across runs.
-- [ ] Confirm the layer's Lock attribute prevents accidental edits:
+- [x] Confirm the layer's Lock attribute prevents accidental edits:
       try to MOVE one of the polylines via standard AutoCAD
       commands; AutoCAD should refuse with "1 was on a locked
       layer".
-- [ ] Optional: edit `deck_cl_offset_from_alignment` to a non-zero
+- [x] Optional: edit `deck_cl_offset_from_alignment` to a non-zero
       value, delete the existing `BRIDGE-EDGE-L`/`-R` polylines so
       they get recreated at the shifted positions, re-run, confirm
       a `BRIDGE-CL` polyline now appears between the two edges.
