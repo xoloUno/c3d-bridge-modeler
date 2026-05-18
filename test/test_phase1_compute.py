@@ -143,6 +143,70 @@ def test_haunch_left_higher_on_left_of_crown(tmp_path):
         assert endpt.haunch_h_right_ft > haunch_depth
 
 
+def test_deck_cross_sections_attached_to_each_span():
+    """compute() populates deck_start and deck_end on every ComputedSpan."""
+    params = p1.load(EXAMPLE_PARAMS)
+    table = aisc.load()
+    result = pc.compute(params, table, profile_elevation_at=_flat_profile_at(120.0))
+
+    for span in result.spans:
+        assert span.deck_start is not None
+        assert span.deck_end is not None
+        assert span.deck_start.bearing_station < span.deck_end.bearing_station
+        assert math.isclose(
+            span.deck_start.deck_depth, params.superstructures[0].deck_depth
+        )
+
+
+def test_deck_crowned_symmetric_produces_three_top_vertices():
+    """Symmetric crown (slope_left = slope_right = -2%) with crown at deck CL
+    inside the deck → hex cross-section with 3 top vertices (left, crown,
+    right)."""
+    params = p1.load(EXAMPLE_PARAMS)  # already slope_left = slope_right = -2
+    table = aisc.load()
+    result = pc.compute(params, table, profile_elevation_at=_flat_profile_at(120.0))
+
+    span = result.spans[0]
+    assert len(span.deck_start.top_vertices) == 3
+    assert len(span.deck_end.top_vertices) == 3
+    # Crown vertex is at perp_offset = 0 (crown_offset default = 0)
+    crown_vertex = span.deck_start.top_vertices[1]
+    assert math.isclose(crown_vertex.perp_offset, 0.0)
+    # Crown vertex is HIGHER than the edges (peak)
+    assert crown_vertex.top_z > span.deck_start.top_vertices[0].top_z
+    assert crown_vertex.top_z > span.deck_start.top_vertices[2].top_z
+
+
+def test_deck_super_elevated_produces_two_top_vertices(tmp_path):
+    """Opposite-sign slopes (slope_left = -2%, slope_right = +2%) → continuous
+    plane → parallelogram cross-section with 2 top vertices."""
+    raw = _load_example_raw()
+    raw["deck_cross_slope_left"] = -2.0
+    raw["deck_cross_slope_right"] = +2.0
+    params = _params_from(raw, tmp_path)
+    table = aisc.load()
+    result = pc.compute(params, table, profile_elevation_at=_flat_profile_at(120.0))
+
+    span = result.spans[0]
+    assert len(span.deck_start.top_vertices) == 2
+    assert len(span.deck_end.top_vertices) == 2
+
+
+def test_deck_edges_match_perpendicular_deck_width():
+    params = p1.load(EXAMPLE_PARAMS)
+    table = aisc.load()
+    result = pc.compute(params, table, profile_elevation_at=_flat_profile_at(120.0))
+
+    span = result.spans[0]
+    # Edge-to-edge spread (left and right perp_offsets) should equal the
+    # perpendicular deck width at that bearing.
+    perp_start = (
+        span.deck_start.top_vertices[-1].perp_offset
+        - span.deck_start.top_vertices[0].perp_offset
+    )
+    assert math.isclose(perp_start, span.perpendicular_deck_width_start)
+
+
 def test_haunch_delta_matches_cross_slope_times_half_bf():
     """For W36X150 (bf=12 in = 1 ft) at -2% cross-slope, the delta between
     h_left/h_right and haunch_depth is (-0.02) * 0.5 = -0.01 ft on the

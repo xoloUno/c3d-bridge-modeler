@@ -331,6 +331,43 @@ Remaining low-risk checks (file later if regressions appear):
 - [ ] Re-run the graph (no params changes). Summary shows
       `Haunches: built N (...); purged N prior entities`.
 
+### Phase 1 deck slab verification
+The deck is a `Solid3d` lofted between two cross-sections — one at each
+bearing line. Each cross-section is a parallelogram (super-elevated /
+non-crown-straddling) or hexagon (crown-straddling, same-sign cross-
+slopes). For fanning decks (width changes start → end), the loft handles
+the geometry correctly. `BRIDGE-DECK` layer (color 7 by default).
+
+**Reminder:** if `src/phase1_node.py` changed structurally (it did, for
+this slice — `_OWN_MODULES` added `decks` and `deck_geometry`), paste
+the FULL body from `src/phase1_node.py` into your Dynamo Python node.
+Just bumping the trigger inline won't pick up the new module purge list.
+
+- [ ] Update the .dyn's Python node body from `src/phase1_node.py`
+      (v20). Re-run the graph.
+- [ ] Watch node summary now includes a fifth line:
+      `Decks: built N (SPAN-1.DECK, ...); purged M prior entities` —
+      `N` matches the number of spans (1 for Phase 1).
+- [ ] Layer `BRIDGE-DECK` is present (color 7 by default).
+- [ ] A `Solid3d` exists on `BRIDGE-DECK` spanning the bridge length.
+- [ ] **Plan view**: the deck slab covers the full bridge footprint
+      from start-bearing left edge through end-bearing right edge —
+      coincident with the `BRIDGE-EDGE-L` / `BRIDGE-EDGE-R` polylines.
+- [ ] **Front elevation** (perpendicular to alignment): the deck top
+      slopes with the profile + cross-slope, parallel to the girder
+      top-flange tilt. Deck thickness = `deck_depth` (e.g. 0.667 ft
+      for the committed example).
+- [ ] **Section cut** at midspan: deck cross-section shows the
+      expected shape — parallelogram for super-elevated decks like
+      Erik's D-E test, or peaked hexagon for crowned roadways.
+- [ ] The deck soffit (bottom face) touches the top of each haunch
+      cleanly — no Z-fight or gap.
+- [ ] `XDLIST` on the deck shows `BRIDGE_MODELER` xdata with payload
+      like `{"element":"deck","span_id":"SPAN-1","id":"SPAN-1.DECK"}`.
+- [ ] Re-run the graph (no params changes). Summary shows
+      `Decks: built N (...); purged N prior entities` — regenerate
+      contract holds.
+
 ## Operational notes for future runs
 
 - **`CTRL-S` the DWG** immediately after a successful Dynamo run.

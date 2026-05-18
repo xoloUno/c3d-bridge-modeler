@@ -41,6 +41,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Optional, Tuple
 
 import aisc
+import deck_geometry as dg
 import elevation
 import phase1_params as p1
 import units
@@ -77,6 +78,31 @@ class GirderInSpan:
 
 
 @dataclass(frozen=True)
+class DeckTopVertex:
+    """One top-edge vertex of the deck cross-section at a bearing line."""
+    perp_offset: float    # ft, alignment-perpendicular (consumed by point_on_skewed_bearing)
+    top_z: float          # ft, top-of-deck elevation at this offset
+
+
+@dataclass(frozen=True)
+class DeckCrossSection:
+    """Deck cross-section at one bearing line.
+
+    `top_vertices` runs from left edge to right edge. For a typical
+    parallelogram deck (super-elevated or non-crown-straddling) it has
+    2 entries; for a crowned deck that straddles the crown with same-
+    sign cross-slopes it has 3 entries (left, crown, right).
+
+    Bottom edge of the slab is derived by subtracting `deck_depth` from
+    each top vertex's `top_z` (deck bottom is parallel to deck top).
+    """
+    bearing_station: float
+    skew_angle: float
+    top_vertices: Tuple[DeckTopVertex, ...]
+    deck_depth: float
+
+
+@dataclass(frozen=True)
 class ComputedSpan:
     span_id: str
     start_support_id: str
@@ -91,6 +117,8 @@ class ComputedSpan:
     bearing_line_length_end: float         # along-bearing length at end support
     bearing_to_bearing_length: float       # girder span (along main alignment)
     girders: Tuple[GirderInSpan, ...]
+    deck_start: DeckCrossSection
+    deck_end: DeckCrossSection
 
 
 @dataclass(frozen=True)
@@ -187,6 +215,25 @@ def compute(
                 GirderInSpan(girder_index=g_idx + 1, start=start_state, end=end_state)
             )
 
+        deck_start = _build_deck_cross_section(
+            params=params,
+            super_=super_,
+            bearing_station=start_bearing_station,
+            skew_deg=start_support.skew_angle,
+            profile_elevation=start_profile_elev,
+            deck_cl_offset=deck_cl_offset_start,
+            perp_deck_width=super_.perpendicular_deck_width_start,
+        )
+        deck_end = _build_deck_cross_section(
+            params=params,
+            super_=super_,
+            bearing_station=end_bearing_station,
+            skew_deg=end_support.skew_angle,
+            profile_elevation=end_profile_elev,
+            deck_cl_offset=deck_cl_offset_end,
+            perp_deck_width=super_.perpendicular_deck_width_end,
+        )
+
         spans_out.append(
             ComputedSpan(
                 span_id=span.span_id,
@@ -202,6 +249,8 @@ def compute(
                 bearing_line_length_end=end_bearing_len,
                 bearing_to_bearing_length=end_bearing_station - start_bearing_station,
                 girders=tuple(girders_out),
+                deck_start=deck_start,
+                deck_end=deck_end,
             )
         )
 
@@ -231,6 +280,74 @@ def _girder_depth_ft(
     raise Phase1ComputeError(
         f"girder_type {super_.girder_type!r} not yet supported by orchestrator "
         f"(PLATE_GIRDER and others are deferred to follow-up slices)"
+    )
+
+
+def _build_deck_cross_section(
+    *,
+    params: p1.Phase1Params,
+    super_: p1.Superstructure,
+    bearing_station: float,
+    skew_deg: float,
+    profile_elevation: float,
+    deck_cl_offset: float,
+    perp_deck_width: float,
+) -> DeckCrossSection:
+    """Compute the deck cross-section at one bearing line.
+
+    For typical Phase 1 bridges with constant cross-slope, the result
+    is a 2-vertex top edge (left + right) for super-elevated or non-
+    crown-straddling decks, or a 3-vertex top edge (left + crown +
+    right) for crowned decks that straddle the crown with same-sign
+    cross-slopes.
+    """
+    half_width = perp_deck_width / 2.0
+    deck_left_perp = deck_cl_offset - half_width
+    deck_right_perp = deck_cl_offset + half_width
+
+    crown_offset_here = params.crown_offset.at(bearing_station)
+
+    def _top_z_at(perp: float) -> float:
+        return elevation.top_of_deck_at_offset(
+            profile_elevation=profile_elevation,
+            deck_profile_offset=params.deck_profile_offset,
+            crown_offset=crown_offset_here,
+            cross_slope_left_pct=params.deck_cross_slope_left,
+            cross_slope_right_pct=params.deck_cross_slope_right,
+            girder_offset=perp,
+        )
+
+    top_left_z = _top_z_at(deck_left_perp)
+    top_right_z = _top_z_at(deck_right_perp)
+
+    has_kink = dg.crown_kink_present(
+        slope_left_pct=params.deck_cross_slope_left,
+        slope_right_pct=params.deck_cross_slope_right,
+        deck_left_perp=deck_left_perp,
+        deck_right_perp=deck_right_perp,
+        crown_perp=crown_offset_here,
+    )
+
+    if has_kink:
+        top_vertices = (
+            DeckTopVertex(perp_offset=deck_left_perp, top_z=top_left_z),
+            DeckTopVertex(
+                perp_offset=crown_offset_here,
+                top_z=_top_z_at(crown_offset_here),
+            ),
+            DeckTopVertex(perp_offset=deck_right_perp, top_z=top_right_z),
+        )
+    else:
+        top_vertices = (
+            DeckTopVertex(perp_offset=deck_left_perp, top_z=top_left_z),
+            DeckTopVertex(perp_offset=deck_right_perp, top_z=top_right_z),
+        )
+
+    return DeckCrossSection(
+        bearing_station=bearing_station,
+        skew_angle=skew_deg,
+        top_vertices=top_vertices,
+        deck_depth=super_.deck_depth,
     )
 
 

@@ -79,11 +79,16 @@ test/                  Test parameter files and expected outputs
 - Phase 1 compute extended with per-bearing-line `haunch_h_left_ft` / `haunch_h_right_ft` — flange-tip top-of-deck lookups via the existing elevation chain
 - Pure-math haunch profile builder (`src/haunch_geometry.py`) — closed 4-vertex trapezoid (bottom on top of flange, top sloped to deck bottom)
 - Haunch swept solids (`src/haunches.py`) — 4-vertex trapezoid profile anchored on top of each girder, swept along the same 3D path with `Align=NoAlignment` + `Bank=False`. Constant-profile baseline using start-bearing dims; layer `BRIDGE-DECK-HAUNCH` (color 51). Hexagonal-with-chamfers cross-section deferred to a later slice. Verified 2026-05-18 on `D-E` alignment; haunch tops flush with deck soffit slope direction after a mirror fix (128162f) and a stale-module-cache fix (2e69aae).
-- 133 macOS unit tests covering the pure-logic layer
+- Pure-math deck cross-section vertex builder (`src/deck_geometry.py`) — 4-vertex parallelogram (super-elevated / non-crown-straddling) or 6-vertex hex (crown-straddling with same-sign cross-slopes); crown-kink detection helper
+- Phase 1 compute extended with per-bearing-line `DeckCrossSection` (top vertex list + bearing station + skew + deck_depth)
+- 151 macOS unit tests covering the pure-logic layer
 - C3D-side build orchestrator (`src/phase1_build.py`) and Dynamo node body (`src/phase1_node.py`) verified end-to-end on a real `D-E` alignment with 10° skew
 
+### Code written, awaiting C3D verification
+**Deck slab lofted solids** (`src/decks.py`). Per span: build a Region for the start cross-section (closed polyline in the vertical plane containing the start bearing line; XYs via `point_on_skewed_bearing`-style construction, Zs from compute's top-of-deck lookups), build the end Region similarly, call `Solid3d.CreateLoftedSolid` with `[start_region, end_region]` in a `DBObjectCollection`. Layer `BRIDGE-DECK` (color 7), xdata `{element, span_id, id}`. Re-run regenerates; girder + haunch + skeleton layers untouched.
+
 ### Next up
-Deck solid lofted between cross-section profiles at the bearing lines.
+Substructure: pier caps, columns (above/below grade), abutment stems / backwalls / wingwalls, footings — when single-span Phase 1 is fully verified.
 
 ### Phase 0 (complete, 2026-05-06)
 Foundation & proof-of-concept verified — see `MANUAL-TASKS.md` for the verification record. The Phase 0 pipeline (JSON params → 3 `Solid3d` boxes on `BRIDGE-*` layers with xdata) is the baseline Phase 1 builds on.

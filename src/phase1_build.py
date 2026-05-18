@@ -23,6 +23,11 @@ Pipeline:
                                  ├─▶ haunches.ensure_phase1_haunches()
                                  │         (haunch trapezoid swept solids on
                                  │          BRIDGE-DECK-HAUNCH; regenerated)
+                                 ├─▶ decks.ensure_phase1_decks()
+                                 │         (deck slab lofted between start
+                                 │          and end bearing-line cross-
+                                 │          sections on BRIDGE-DECK;
+                                 │          regenerated)
                                  ▼
                   format_text_report(...)
                                  ▼
@@ -45,6 +50,7 @@ import c3d_doc
 import alignment as al
 import skeleton
 import bridge_lines
+import decks
 import girders
 import haunches
 
@@ -84,6 +90,7 @@ def _run(params_path: str) -> str:
     sub_alignment_summary = ""
     girder_summary = ""
     haunch_summary = ""
+    deck_summary = ""
     with c3d_doc.locked_document():
         with c3d_doc.transaction() as tr:
             print(f"[phase1_build] resolving alignment {params.alignment_name!r}")
@@ -162,6 +169,22 @@ def _run(params_path: str) -> str:
             )
             print(f"[phase1_build] {haunch_summary}")
 
+            print("[phase1_build] regenerating deck slabs")
+            dk = decks.ensure_phase1_decks(
+                tr=tr,
+                db=db,
+                alignment_obj=alignment_obj,
+                params=params,
+                compute_result=result,
+                aisc_table=aisc_table,
+            )
+            deck_summary = (
+                f"Decks: built {len(dk['created'])} "
+                f"({', '.join(name for name, _ in dk['created']) or '—'}); "
+                f"purged {dk['purged']} prior entit{'y' if dk['purged'] == 1 else 'ies'}"
+            )
+            print(f"[phase1_build] {deck_summary}")
+
             tr.Commit()
 
     report = phase1_compute.format_text_report(result)
@@ -172,5 +195,5 @@ def _run(params_path: str) -> str:
         print(f"[phase1_build] {line}")
     return (
         f"{skeleton_summary}\n{sub_alignment_summary}\n"
-        f"{girder_summary}\n{haunch_summary}\n\n{report}"
+        f"{girder_summary}\n{haunch_summary}\n{deck_summary}\n\n{report}"
     )
