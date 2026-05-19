@@ -261,7 +261,16 @@ def _ensure_polyline(
         return
 
     if existing_id is not None:
-        stale_ent = tr.GetObject(existing_id, OpenMode.ForWrite)
+        # `BRIDGE-NOPLOT` is locked at the layer level (see
+        # `_set_layer_plot_and_lock` above) so users can't accidentally
+        # move/erase the polylines from the AutoCAD UI. The lock blocks
+        # `OpenMode.ForWrite` even though we OWN the entity — pass
+        # `forceOpenOnLockedLayer=True` (4th arg) so the self-heal can
+        # erase the stale entity. AppendEntity (used below for the
+        # replacement polyline) bypasses the lock natively.
+        stale_ent = tr.GetObject(
+            existing_id, OpenMode.ForWrite, False, True
+        )
         stale_ent.Erase()
         regenerated.append((name, existing_id, existing_version))
 
