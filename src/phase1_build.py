@@ -129,11 +129,14 @@ def _run(params_path: str) -> str:
                 params=params,
                 compute_result=result,
             )
+            regen_names = [name for name, _oid, _ver in bl.get("regenerated", [])]
             sub_alignment_summary = (
                 f"Bridge lines: created {len(bl['created'])} "
                 f"({', '.join(name for name, _ in bl['created']) or '—'}), "
                 f"preserved {len(bl['preserved'])} "
-                f"({', '.join(name for name, _ in bl['preserved']) or '—'})"
+                f"({', '.join(name for name, _ in bl['preserved']) or '—'}), "
+                f"regenerated {len(regen_names)} "
+                f"({', '.join(regen_names) or '—'})"
             )
             print(f"[phase1_build] {sub_alignment_summary}")
 
