@@ -63,6 +63,15 @@ NOPLOT_LAYER_COLOR = 6  # magenta — distinct from default colors
 # subsequent runs. Reuses the same RegApp the deck/pier solids tag with.
 XDATA_APP = "BRIDGE_MODELER"
 XDATA_KEY = "bridge_line"
+# Schema version stamped on each polyline at creation time. Bump when
+# the polyline-generation algorithm changes in a way that invalidates
+# previously-created polylines — `_ensure_polyline` then erases stale
+# tagged polylines (or untagged-with-our-name polylines created before
+# this stamp existed) and regenerates them on the next run. Designer
+# edits to a polyline whose schema_version matches the current code
+# are still preserved via the find-or-create path.
+_SCHEMA_VERSION_KEY = "schema_version"
+_SCHEMA_VERSION = "v4-support-anchor"
 
 # Reference-line names. Phase 1 = single bridge per drawing; multi-bridge
 # namespacing is an open question (scope.md "Open Questions").
@@ -122,9 +131,10 @@ def ensure_phase1_bridge_lines(
 
     created: List[Tuple[str, object]] = []
     preserved: List[Tuple[str, object]] = []
+    regenerated: List[Tuple[str, object, object]] = []
 
-    _ensure_polyline(tr, db, NAME_EDGE_LEFT, left_pts, created, preserved)
-    _ensure_polyline(tr, db, NAME_EDGE_RIGHT, right_pts, created, preserved)
+    _ensure_polyline(tr, db, NAME_EDGE_LEFT, left_pts, created, preserved, regenerated)
+    _ensure_polyline(tr, db, NAME_EDGE_RIGHT, right_pts, created, preserved, regenerated)
 
     if not params.deck_cl_offset_from_alignment.is_effectively_constant_zero():
         # Bridge CL is along the alignment direction at deck CL (no skew —
@@ -133,9 +143,19 @@ def ensure_phase1_bridge_lines(
             al.point_on_skewed_bearing(alignment_obj, sta, skew, deck_cl_at(sta))
             for sta, skew in vertex_specs
         ]
-        _ensure_polyline(tr, db, NAME_BRIDGE_CL, cl_pts, created, preserved)
+        _ensure_polyline(tr, db, NAME_BRIDGE_CL, cl_pts, created, preserved, regenerated)
 
-    return {"created": created, "preserved": preserved}
+    for name, _oid, stale_version in regenerated:
+        print(
+            f"[bridge_lines] regenerated {name} (stale schema_version="
+            f"{stale_version!r}; current={_SCHEMA_VERSION!r})"
+        )
+
+    return {
+        "created": created,
+        "preserved": preserved,
+        "regenerated": regenerated,
+    }
 
 
 # ----------------------------------------------------------------------
@@ -224,12 +244,26 @@ def _ensure_polyline(
     points_xy: List[Tuple[float, float]],
     created: list,
     preserved: list,
+    regenerated: list,
 ) -> None:
-    """Find-or-create a tagged polyline. Idempotent across runs."""
-    existing_id = _find_tagged_polyline(tr, db, name)
-    if existing_id is not None:
+    """Find-or-create a tagged polyline.
+
+    Polylines stamped with the current `_SCHEMA_VERSION` are preserved
+    (so designer edits to position survive re-runs). Polylines whose
+    stamp is missing or doesn't match — created by an earlier algorithm
+    version, e.g. when this module anchored at bearing stations instead
+    of support stations — are erased and regenerated against the
+    current code.
+    """
+    existing_id, existing_version = _find_tagged_polyline(tr, db, name)
+    if existing_id is not None and existing_version == _SCHEMA_VERSION:
         preserved.append((name, existing_id))
         return
+
+    if existing_id is not None:
+        stale_ent = tr.GetObject(existing_id, OpenMode.ForWrite)
+        stale_ent.Erase()
+        regenerated.append((name, existing_id, existing_version))
 
     if len(points_xy) < 2:
         raise BridgeLineError(
@@ -246,12 +280,23 @@ def _ensure_polyline(
     btr.AppendEntity(pline)
     tr.AddNewlyCreatedDBObject(pline, True)
 
-    xdata.write(tr, pline.ObjectId, XDATA_APP, {XDATA_KEY: name})
-    created.append((name, pline.ObjectId))
+    xdata.write(tr, pline.ObjectId, XDATA_APP, {
+        XDATA_KEY: name,
+        _SCHEMA_VERSION_KEY: _SCHEMA_VERSION,
+    })
+    if existing_id is None:
+        created.append((name, pline.ObjectId))
+    # If existing_id was non-None we already recorded it in `regenerated`
+    # above — the new polyline replaces it, so don't double-count.
 
 
 def _find_tagged_polyline(tr, db, name: str):
-    """Scan ModelSpace for a Polyline on NOPLOT_LAYER with matching xdata name."""
+    """Find a tagged polyline by name. Returns `(entity_id, schema_version)`.
+
+    `schema_version` is None when the polyline was tagged but had no
+    schema_version key written (created by an older module version).
+    Returns `(None, None)` when no tagged polyline matches.
+    """
     bt_record_id = SymbolUtilityServices.GetBlockModelSpaceId(db)
     btr = tr.GetObject(bt_record_id, OpenMode.ForRead)
     for entity_id in btr:
@@ -263,5 +308,5 @@ def _find_tagged_polyline(tr, db, name: str):
             continue
         data = xdata.read(entity, XDATA_APP)
         if data and data.get(XDATA_KEY) == name:
-            return entity_id
-    return None
+            return entity_id, data.get(_SCHEMA_VERSION_KEY)
+    return None, None
