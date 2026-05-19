@@ -403,6 +403,32 @@ If the v25 verification surfaces anything unexpected, the prior
 implementation lives at git tag-or-commit `242082f` (commit before
 the haunch refactor).
 
+## From session: 2026-05-19 — external review findings (F1–F8) + self-heal
+
+Codex external review surfaced eight findings against Phase 1; six bug
+fixes and three deferral guards landed in PR #14 (`d368f4d`). The
+`bridge_lines` schema-version self-heal added in PR #15 (`b7d2ecb` +
+hotfix `7c65501`) made the F2 deck-corner anchor switch silently
+self-healing for users who had pre-existing polylines from the older
+algorithm.
+
+- [x] Pull `main` on Windows; bump `phase1_node.py` reload trigger
+      inline; rerun graph against `test/params.phase1.local.json`.
+- [x] First post-pull run: Watch node summary shows `Bridge lines:
+      created 0 (—), preserved 0 (—), regenerated 3 (...)` — the
+      self-heal detected the unstamped polylines and recreated them.
+- [x] No `eOnLockedLayer` exception (hotfix `7c65501` verified working
+      via `forceOpenOnLockedLayer=True` on the stale-erase path).
+- [x] Deck slab plan corners coincide with `BRIDGE-NOPLOT` polyline
+      endpoints — the prior 0.03 ft per-corner mismatch and the 1.5 ft
+      per-end slab inset both resolved.
+- [x] Girders / haunches / deck rebuilt without regressions; elevation
+      report unchanged for the user's local config (constant
+      `deck_cl_offset_from_alignment`, MATCH_TOP_FLANGE haunch width,
+      `follow_superelevation: false`).
+
+Phase 1 superstructure is closed out. Next iteration is Phase 2.
+
 ## Operational notes for future runs
 
 - **`CTRL-S` the DWG** immediately after a successful Dynamo run.
