@@ -176,6 +176,12 @@ def _purge_girder_layer(tr, db) -> int:
     we own this layer, so a wholesale wipe is the simplest policy.
     Skeleton sub-alignments live on `BRIDGE-SKELETON-GIRDER` (different
     layer) and are NOT affected.
+
+    DATA-LOSS SURFACE: this also erases any non-tool entity a user
+    placed on `BRIDGE-GIRDER` (e.g. copied solids, manual annotations),
+    and is unsafe for multi-bridge drawings — both bridges share the
+    layer. Tighten to xdata-filtered + bridge-id-scoped purge before
+    enabling multi-bridge drawings.
     """
     ms_id = SymbolUtilityServices.GetBlockModelSpaceId(db)
     btr = tr.GetObject(ms_id, OpenMode.ForWrite)

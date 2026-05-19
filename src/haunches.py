@@ -78,11 +78,9 @@ from Autodesk.AutoCAD.Geometry import (  # noqa: E402
     Vector3d,
 )
 
-import aisc
 import alignment as al
 import decks
 import layers
-import units
 import xdata
 
 
@@ -133,8 +131,7 @@ def ensure_phase1_haunches(
     for span in compute_result.spans:
         start_support = supports_by_id[span.start_support_id]
         end_support = supports_by_id[span.end_support_id]
-        shape = aisc.get(aisc_table, span.girder_shape)
-        bf_ft = units.in_to_ft(shape.bf_in)
+        haunch_width_ft = span.haunch_width_ft
         deck_depth_ft = span.deck_start.deck_depth
         # Haunch depth comes from the params (constant per superstructure
         # in Phase 1). We retrieve it via the per-girder `haunch_h_left_ft`
@@ -170,7 +167,7 @@ def ensure_phase1_haunches(
                 params=params,
                 span=span,
                 profile_elevation_at=profile_elevation_at,
-                bf_ft=bf_ft,
+                bf_ft=haunch_width_ft,
                 over_tall_height_ft=over_tall_height_ft,
                 start_xyz=start_xyz,
                 end_xyz=end_xyz,
@@ -202,7 +199,13 @@ def ensure_phase1_haunches(
 # ----------------------------------------------------------------------
 
 def _purge_haunch_layer(tr, db) -> int:
-    """Erase every ModelSpace entity on `BRIDGE-DECK-HAUNCH`."""
+    """Erase every ModelSpace entity on `BRIDGE-DECK-HAUNCH`.
+
+    DATA-LOSS SURFACE: also erases anything else a user placed on
+    `BRIDGE-DECK-HAUNCH` and is unsafe for multi-bridge drawings (both
+    bridges share the layer). Tighten to xdata-filtered +
+    bridge-id-scoped purge before enabling multi-bridge drawings.
+    """
     ms_id = SymbolUtilityServices.GetBlockModelSpaceId(db)
     btr = tr.GetObject(ms_id, OpenMode.ForWrite)
     count = 0

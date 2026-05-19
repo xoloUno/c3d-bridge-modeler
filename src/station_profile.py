@@ -71,6 +71,13 @@ class StationProfile:
         """
         return all(abs(v) <= tolerance for _s, v in self.points)
 
+    def is_effectively_constant(self, tolerance: float = 1e-9) -> bool:
+        """True iff every control point's value matches the first within `tolerance`."""
+        if not self.points:
+            return True
+        v0 = self.points[0][1]
+        return all(abs(v - v0) <= tolerance for _s, v in self.points)
+
 
 def parse(
     raw: Union[float, int, list],
