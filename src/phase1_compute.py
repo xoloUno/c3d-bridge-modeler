@@ -111,6 +111,7 @@ class ComputedSpan:
     girder_type: str
     girder_shape: str
     girder_depth_ft: float
+    haunch_width_ft: float                 # resolved per haunch_width_mode (CUSTOM -> haunch_width; else AISC bf)
     perpendicular_deck_width_start: float
     perpendicular_deck_width_end: float
     bearing_line_length_start: float       # along-bearing length at start support
@@ -243,6 +244,7 @@ def compute(
                 girder_type=super_.girder_type,
                 girder_shape=super_.girder_shape,
                 girder_depth_ft=girder_depth_ft,
+                haunch_width_ft=_haunch_width_ft(super_, aisc_table),
                 perpendicular_deck_width_start=super_.perpendicular_deck_width_start,
                 perpendicular_deck_width_end=super_.perpendicular_deck_width_end,
                 bearing_line_length_start=start_bearing_len,
@@ -280,6 +282,27 @@ def _girder_depth_ft(
     raise Phase1ComputeError(
         f"girder_type {super_.girder_type!r} not yet supported by orchestrator "
         f"(PLATE_GIRDER and others are deferred to follow-up slices)"
+    )
+
+
+def _haunch_width_ft(
+    super_: p1.Superstructure, aisc_table: Dict[str, aisc.WShape]
+) -> float:
+    """Resolve haunch width per `haunch_width_mode` to a single value."""
+    if super_.haunch_width_mode == "CUSTOM":
+        if super_.haunch_width is None:
+            raise Phase1ComputeError(
+                "haunch_width_mode == 'CUSTOM' but haunch_width is None "
+                "(params parser should have rejected this)"
+            )
+        return float(super_.haunch_width)
+    if super_.girder_type == "W_SHAPE":
+        shape = aisc.get(aisc_table, super_.girder_shape)
+        return units.in_to_ft(shape.bf_in)
+    raise Phase1ComputeError(
+        f"haunch width resolution for girder_type {super_.girder_type!r} "
+        f"not yet supported (use haunch_width_mode == 'CUSTOM' with an "
+        f"explicit haunch_width)"
     )
 
 

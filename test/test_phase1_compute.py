@@ -75,6 +75,26 @@ def test_compute_committed_example_flat_profile():
     assert math.isclose(g1.start.along_bearing_offset, -12.0, abs_tol=1e-9)
 
 
+def test_haunch_width_defaults_to_aisc_bf():
+    """MATCH_TOP_FLANGE (default) → haunch_width_ft = AISC bf."""
+    params = p1.load(EXAMPLE_PARAMS)
+    table = aisc.load()
+    result = pc.compute(params, table, profile_elevation_at=_flat_profile_at(120.0))
+    expected_bf_ft = table["W36X150"].bf_in / 12.0
+    assert math.isclose(result.spans[0].haunch_width_ft, expected_bf_ft, abs_tol=1e-9)
+
+
+def test_haunch_width_custom_overrides_aisc_bf(tmp_path):
+    """CUSTOM with a wider haunch propagates verbatim to the span."""
+    raw = _load_example_raw()
+    raw["superstructures"][0]["haunch_width_mode"] = "CUSTOM"
+    raw["superstructures"][0]["haunch_width"] = 1.75  # ft
+    params = _params_from(raw, tmp_path)
+    table = aisc.load()
+    result = pc.compute(params, table, profile_elevation_at=_flat_profile_at(120.0))
+    assert math.isclose(result.spans[0].haunch_width_ft, 1.75, abs_tol=1e-9)
+
+
 def test_compute_chain_descends_monotonically():
     params = p1.load(EXAMPLE_PARAMS)
     table = aisc.load()
@@ -355,59 +375,12 @@ def test_deck_cl_offset_shifts_all_girders(tmp_path):
     assert math.isclose(g4.along_bearing_offset, 12.0, abs_tol=1e-9)
 
 
-def test_deck_cl_offset_array_form_interpolates(tmp_path):
-    """Linearly varying deck CL offset: +0 at begin, +4 at end."""
-    raw = _load_example_raw()
-    raw["deck_cl_offset_from_alignment"] = [
-        {"station": 1000.0, "value": 0.0},
-        {"station": 1200.0, "value": 4.0},
-    ]
-    params = _params_from(raw, tmp_path)
-    table = aisc.load()
-    result = pc.compute(params, table, profile_elevation_at=_flat_profile_at(120.0))
-
-    # Bearings at 1001 and 1199 → interpolated offsets:
-    # at 1001: (1001-1000)/200 × 4 = 0.02
-    # at 1199: (1199-1000)/200 × 4 = 3.98
-    g1 = result.spans[0].girders[0]
-    assert math.isclose(g1.start.girder_offset, -12.0 + 0.02, abs_tol=1e-9)
-    assert math.isclose(g1.end.girder_offset, -12.0 + 3.98, abs_tol=1e-9)
-
-
-# ----------------------------------------------------------------------
-# Crown offset varying with station
-# ----------------------------------------------------------------------
-
-def test_crown_offset_array_form(tmp_path):
-    """Crown migrates from 0 at begin to +9 at end. At begin, all girders
-    treat slope as if crown is at 0; at end, crown is at +9.
-    """
-    raw = _load_example_raw()
-    raw["crown_offset"] = [
-        {"station": 1000.0, "value": 0.0},
-        {"station": 1200.0, "value": 9.0},
-    ]
-    params = _params_from(raw, tmp_path)
-    table = aisc.load()
-    result = pc.compute(params, table, profile_elevation_at=_flat_profile_at(120.0))
-
-    # At start bearing (1001): crown_offset ≈ 0.045 → still ~symmetric
-    g1, g2, g3, g4 = result.spans[0].girders
-    # At start: still nearly symmetric (G1≈G4)
-    assert math.isclose(g1.start.top_of_deck, g4.start.top_of_deck, abs_tol=0.01)
-    # At end (1199): crown_offset ≈ 8.955 — most girders are LEFT of crown,
-    # G4 (at +12) is RIGHT of crown. The girder closest to crown is highest.
-    # G4 is at +12, crown at ~8.955: distance from crown = +3.045
-    # G3 is at +4: distance from crown = -4.955
-    # So G4 should be CLOSER to the crown (smaller |distance|) and therefore
-    # HIGHER than G3 — but in original example all four were ranked by their
-    # distance from a centered crown.
-    # With crown at +9, abs_distance: G1=21, G2=13, G3=5, G4=3 → ranking
-    # G4 highest, then G3, then G2, then G1.
-    # Verify the new ranking at end bearing.
-    assert g4.end.top_of_deck > g3.end.top_of_deck
-    assert g3.end.top_of_deck > g2.end.top_of_deck
-    assert g2.end.top_of_deck > g1.end.top_of_deck
+# Station-varying deck_cl_offset_from_alignment and crown_offset are
+# rejected at params parse time in Phase 1 (the deck solid is a
+# constant-section sweep). The compute-layer tests that previously
+# exercised the interpolation have been retired; the StationProfile
+# interpolation itself is covered in test_station_profile.py, and the
+# parse-time reject is covered in test_phase1_params.py.
 
 
 # ----------------------------------------------------------------------

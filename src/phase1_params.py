@@ -129,6 +129,12 @@ class Phase1Params:
     profile_name: str
     eg_surface_name: str
     fg_surface_name: str
+    # template_dwg: path to a bridge-template DWG that supplies layer
+    # definitions, linetypes, skeleton styles, and the BRIDGE_IFC
+    # PropertySet. CURRENTLY PARSED BUT NOT CONSUMED — the build
+    # creates layers ad-hoc and writes xdata (not IFC PropSets). The
+    # field is retained so user params keep validating once the
+    # template loader lands. See MANUAL-TASKS.md "Bridge template DWG".
     template_dwg: str
 
     # Bridge geometry envelope
@@ -199,6 +205,25 @@ def parse(raw: dict) -> Phase1Params:
         raw["deck_cl_offset_from_alignment"], begin, end,
         "deck_cl_offset_from_alignment",
     )
+    # Phase-1 capability gate: deck solid construction is a constant
+    # cross-section sweep, so station-varying crown_offset or
+    # deck_cl_offset_from_alignment would not be honored by the slab
+    # geometry (only by the reference polylines). Reject explicitly so
+    # users don't silently get a deck that ignores their input. Lifting
+    # this gate is tracked in docs/phase2-scope.md.
+    if not crown_profile.is_effectively_constant():
+        raise Phase1ParamsError(
+            "station-varying crown_offset is not yet supported by the deck "
+            "solid (constant-section sweep); collapse to a single value "
+            "until station-varying cross-section lands in Phase 2+"
+        )
+    if not deck_cl_profile.is_effectively_constant():
+        raise Phase1ParamsError(
+            "station-varying deck_cl_offset_from_alignment is not yet "
+            "supported by the deck solid (constant-section sweep); "
+            "collapse to a single value until station-varying cross-section "
+            "lands in Phase 2+"
+        )
 
     supports = tuple(_parse_support(s, i) for i, s in enumerate(raw["supports"]))
     _require_unique_ids(supports, "support_id")
@@ -239,7 +264,7 @@ def parse(raw: dict) -> Phase1Params:
         crown_offset=crown_profile,
         deck_cl_offset_from_alignment=deck_cl_profile,
         deck_profile_offset=float(raw["deck_profile_offset"]),
-        follow_superelevation=bool(raw["follow_superelevation"]),
+        follow_superelevation=_parse_follow_superelevation(raw["follow_superelevation"]),
         supports=supports,
         spans=spans,
         superstructures=superstructures,
@@ -251,6 +276,29 @@ def _parse_station_profile(raw, begin: float, end: float, name: str) -> sp.Stati
         return sp.parse(raw, begin_station=begin, end_station=end, name=name)
     except sp.StationProfileError as exc:
         raise Phase1ParamsError(str(exc)) from exc
+
+
+def _parse_follow_superelevation(raw) -> bool:
+    """Strict boolean parse + Phase-1 capability gate.
+
+    Avoid Python's `bool("false") is True` foot-gun by requiring a true
+    JSON boolean, then reject `true` until alignment-superelevation
+    tracking is implemented (deferred to Phase 2+). Setting `true` today
+    would not actually alter the geometry, so silently accepting it
+    misrepresents the tool's behavior.
+    """
+    if not isinstance(raw, bool):
+        raise Phase1ParamsError(
+            f"follow_superelevation must be a JSON boolean (true/false); "
+            f"got {type(raw).__name__} {raw!r}"
+        )
+    if raw:
+        raise Phase1ParamsError(
+            "follow_superelevation=true is not yet supported "
+            "(alignment superelevation tracking is deferred to Phase 2+); "
+            "set follow_superelevation=false until the feature lands"
+        )
+    return raw
 
 
 def _parse_support(raw: dict, idx: int) -> Support:
@@ -318,6 +366,11 @@ def _parse_superstructure(raw: dict, idx: int) -> Superstructure:
         raise Phase1ParamsError(
             f"{where}.haunch_width is required when haunch_width_mode == 'CUSTOM'"
         )
+    if haunch_width is not None and float(haunch_width) <= 0:
+        raise Phase1ParamsError(
+            f"{where}.haunch_width must be > 0 when specified "
+            f"(got {haunch_width})"
+        )
 
     girder_count = int(raw["girder_count"])
     if girder_count < 2:
@@ -342,6 +395,22 @@ def _parse_superstructure(raw: dict, idx: int) -> Superstructure:
             f"{where}.perpendicular_deck_width_* must be positive"
         )
 
+    deck_depth = float(raw["deck_depth"])
+    if deck_depth <= 0:
+        raise Phase1ParamsError(
+            f"{where}.deck_depth must be > 0 (got {deck_depth})"
+        )
+    haunch_depth = float(raw["haunch_depth"])
+    if haunch_depth <= 0:
+        raise Phase1ParamsError(
+            f"{where}.haunch_depth must be > 0 (got {haunch_depth})"
+        )
+    topping_depth = float(raw.get("topping_depth", 0.0))
+    if topping_depth < 0:
+        raise Phase1ParamsError(
+            f"{where}.topping_depth must be >= 0 (got {topping_depth})"
+        )
+
     return Superstructure(
         girder_type=girder_type,
         girder_shape=str(raw["girder_shape"]),
@@ -355,13 +424,13 @@ def _parse_superstructure(raw: dict, idx: int) -> Superstructure:
         left_edge_to_G1_end=left_end,
         girder_spacings_end=spacings_end,
         Gn_to_right_edge_end=right_end,
-        deck_depth=float(raw["deck_depth"]),
-        haunch_depth=float(raw["haunch_depth"]),
+        deck_depth=deck_depth,
+        haunch_depth=haunch_depth,
         haunch_width_mode=haunch_mode,
         haunch_width=None if haunch_width is None else float(haunch_width),
         girder_geometry=geometry,
         end_diaphragm=bool(raw.get("end_diaphragm", False)),
-        topping_depth=float(raw.get("topping_depth", 0.0)),
+        topping_depth=topping_depth,
     )
 
 
@@ -388,10 +457,17 @@ def _parse_edge_pair(
             f"perpendicular_deck_width_{side} and the skew at that support)"
         )
 
-    return (
-        None if left is None else float(left),
-        None if right is None else float(right),
-    )
+    left_f = None if left is None else float(left)
+    right_f = None if right is None else float(right)
+    if left_f is not None and left_f <= 0:
+        raise Phase1ParamsError(
+            f"{where}.{left_key} must be > 0 when specified (got {left_f})"
+        )
+    if right_f is not None and right_f <= 0:
+        raise Phase1ParamsError(
+            f"{where}.{right_key} must be > 0 when specified (got {right_f})"
+        )
+    return (left_f, right_f)
 
 
 def _parse_spacings(raw, girder_count: int, where: str, side: str) -> Tuple[float, ...]:
@@ -403,7 +479,13 @@ def _parse_spacings(raw, girder_count: int, where: str, side: str) -> Tuple[floa
             f"{where}.girder_spacings_{side} length {len(raw)} "
             f"!= girder_count - 1 ({expected})"
         )
-    return tuple(float(v) for v in raw)
+    values = tuple(float(v) for v in raw)
+    for i, v in enumerate(values):
+        if v <= 0:
+            raise Phase1ParamsError(
+                f"{where}.girder_spacings_{side}[{i}] must be > 0 (got {v})"
+            )
+    return values
 
 
 def _require_keys(raw: dict, keys, where: str) -> None:

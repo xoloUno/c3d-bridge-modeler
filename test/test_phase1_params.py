@@ -108,27 +108,47 @@ def test_constant_offsets_become_two_point_profile():
     assert params.deck_cl_offset_from_alignment.at(1100.0) == 0.0
 
 
-def test_array_form_crown_offset_interpolates():
+def test_station_varying_crown_offset_rejected():
+    """Station-varying crown_offset is deferred (Phase 2+) — the deck
+    solid is a constant-section sweep, so accepting station variation
+    would silently ignore the input. Parse must reject it.
+    """
     raw = _valid_raw()
     raw["crown_offset"] = [
         {"station": 1000.0, "value": 9.0},
         {"station": 1200.0, "value": 0.0},
     ]
-    params = p1.parse(raw)
-    assert params.crown_offset.at(1000.0) == 9.0
-    assert math.isclose(params.crown_offset.at(1100.0), 4.5, abs_tol=1e-9)
-    assert params.crown_offset.at(1200.0) == 0.0
+    with pytest.raises(p1.Phase1ParamsError, match="station-varying crown_offset"):
+        p1.parse(raw)
 
 
-def test_array_form_deck_cl_offset_interpolates():
+def test_station_varying_deck_cl_offset_rejected():
+    """Station-varying deck_cl_offset_from_alignment is deferred (Phase 2+)
+    for the same reason as crown_offset above.
+    """
     raw = _valid_raw()
     raw["deck_cl_offset_from_alignment"] = [
         {"station": 1000.0, "value": 0.0},
         {"station": 1200.0, "value": 4.0},
     ]
+    with pytest.raises(
+        p1.Phase1ParamsError,
+        match="station-varying deck_cl_offset_from_alignment",
+    ):
+        p1.parse(raw)
+
+
+def test_array_form_constant_value_accepted():
+    """Array-form with two equal endpoints is still constant — must pass."""
+    raw = _valid_raw()
+    raw["crown_offset"] = [
+        {"station": 1000.0, "value": 3.0},
+        {"station": 1200.0, "value": 3.0},
+    ]
     params = p1.parse(raw)
-    assert params.deck_cl_offset_from_alignment.at(1000.0) == 0.0
-    assert math.isclose(params.deck_cl_offset_from_alignment.at(1050.0), 1.0, abs_tol=1e-9)
+    assert params.crown_offset.at(1000.0) == 3.0
+    assert params.crown_offset.at(1100.0) == 3.0
+    assert params.crown_offset.at(1200.0) == 3.0
 
 
 # ----------------------------------------------------------------------
@@ -218,6 +238,77 @@ def test_haunch_width_required_when_custom():
     raw = _valid_raw()
     raw["superstructures"][0]["haunch_width_mode"] = "CUSTOM"
     with pytest.raises(p1.Phase1ParamsError, match="haunch_width is required"):
+        p1.parse(raw)
+
+
+def test_haunch_width_must_be_positive_when_specified():
+    raw = _valid_raw()
+    raw["superstructures"][0]["haunch_width_mode"] = "CUSTOM"
+    raw["superstructures"][0]["haunch_width"] = 0.0
+    with pytest.raises(p1.Phase1ParamsError, match="haunch_width must be > 0"):
+        p1.parse(raw)
+
+
+def test_custom_haunch_width_propagates_to_superstructure():
+    raw = _valid_raw()
+    raw["superstructures"][0]["haunch_width_mode"] = "CUSTOM"
+    raw["superstructures"][0]["haunch_width"] = 1.5
+    params = p1.parse(raw)
+    assert params.superstructures[0].haunch_width_mode == "CUSTOM"
+    assert params.superstructures[0].haunch_width == 1.5
+
+
+# ----------------------------------------------------------------------
+# Numeric input validation
+# ----------------------------------------------------------------------
+
+@pytest.mark.parametrize("field", ["deck_depth", "haunch_depth"])
+def test_depth_must_be_positive(field):
+    raw = _valid_raw()
+    raw["superstructures"][0][field] = 0.0
+    with pytest.raises(p1.Phase1ParamsError, match=f"{field} must be > 0"):
+        p1.parse(raw)
+
+
+def test_topping_depth_must_be_nonnegative():
+    raw = _valid_raw()
+    raw["superstructures"][0]["topping_depth"] = -0.1
+    with pytest.raises(p1.Phase1ParamsError, match="topping_depth must be >= 0"):
+        p1.parse(raw)
+
+
+def test_girder_spacing_must_be_positive():
+    raw = _valid_raw()
+    raw["superstructures"][0]["girder_spacings_start"] = [8.0, 0.0, 8.0]
+    with pytest.raises(p1.Phase1ParamsError, match="girder_spacings_start"):
+        p1.parse(raw)
+
+
+def test_edge_spacing_must_be_positive_when_specified():
+    raw = _valid_raw()
+    raw["superstructures"][0]["left_edge_to_G1_start"] = -1.0
+    raw["superstructures"][0]["Gn_to_right_edge_start"] = None
+    with pytest.raises(p1.Phase1ParamsError, match="left_edge_to_G1_start"):
+        p1.parse(raw)
+
+
+# ----------------------------------------------------------------------
+# follow_superelevation strict-bool + deferred-feature gate
+# ----------------------------------------------------------------------
+
+def test_follow_superelevation_true_rejected():
+    """`true` is parsed-but-unimplemented; reject so callers know."""
+    raw = _valid_raw()
+    raw["follow_superelevation"] = True
+    with pytest.raises(p1.Phase1ParamsError, match="follow_superelevation=true"):
+        p1.parse(raw)
+
+
+def test_follow_superelevation_must_be_bool_not_string():
+    """`bool('false')` is True — guard the foot-gun by requiring a JSON bool."""
+    raw = _valid_raw()
+    raw["follow_superelevation"] = "false"
+    with pytest.raises(p1.Phase1ParamsError, match="must be a JSON boolean"):
         p1.parse(raw)
 
 

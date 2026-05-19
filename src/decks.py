@@ -94,11 +94,14 @@ _CROSS_SECTION_PERP_BUFFER_FT = 5.0
 # samples → better vertical-curve fidelity. 21 = every ~4 ft for a
 # typical 80 ft bridge.
 _PATH_SAMPLE_COUNT = 21
-# Trim volume vertical extent (ft). The trim solid extrudes from
-# -_TRIM_BELOW to +_TRIM_ABOVE in world Z; chosen to comfortably
-# contain any realistic bridge deck.
-_TRIM_BELOW_FT = -1000.0
-_TRIM_ABOVE_FT = +1000.0
+# Trim volume vertical-buffer thickness (ft). The trim solid extrudes
+# from `min(path Z) - _TRIM_Z_BUFFER_FT` to
+# `max(path Z) + _TRIM_Z_BUFFER_FT` so it comfortably contains the
+# fat-deck Z extent (path Z ± deck_depth ± cross-slope rise) on any
+# realistic bridge regardless of absolute elevation.
+_TRIM_Z_BUFFER_FT = 50.0
+# Number of profile samples used to size the trim Z extent.
+_TRIM_Z_SAMPLE_COUNT = 11
 
 
 class DeckError(RuntimeError):
@@ -213,7 +216,13 @@ def build_fat_deck_cutter(
 # ----------------------------------------------------------------------
 
 def _purge_deck_layer(tr, db) -> int:
-    """Erase every ModelSpace entity on `BRIDGE-DECK`."""
+    """Erase every ModelSpace entity on `BRIDGE-DECK`.
+
+    DATA-LOSS SURFACE: also erases anything else a user placed on
+    `BRIDGE-DECK` and is unsafe for multi-bridge drawings (both bridges
+    share the layer). Tighten to xdata-filtered + bridge-id-scoped
+    purge before enabling multi-bridge drawings.
+    """
     ms_id = SymbolUtilityServices.GetBlockModelSpaceId(db)
     btr = tr.GetObject(ms_id, OpenMode.ForWrite)
     count = 0
@@ -269,7 +278,17 @@ def _build_deck_solid(
             max_perp=max_perp,
             profile_elevation_at=profile_elevation_at,
         )
-        trim_solid = _build_trim_solid(corners_xy=[(c[2], c[3]) for c in corners])
+        z_below, z_above = _trim_z_range(
+            min_station=min_station,
+            max_station=max_station,
+            profile_elevation_at=profile_elevation_at,
+            deck_profile_offset=params.deck_profile_offset,
+        )
+        trim_solid = _build_trim_solid(
+            corners_xy=[(c[2], c[3]) for c in corners],
+            z_below=z_below,
+            z_above=z_above,
+        )
 
         # Boolean intersect: fat_deck ∩ trim_solid → final deck.
         # Operates in place: fat_deck is mutated to hold the result.
@@ -306,18 +325,23 @@ def _deck_plan_corners(
 ) -> List[Tuple[float, float, float, float]]:
     """Return the 4 deck plan-view corners.
 
-    Each entry is `(bearing_station, perp_offset, world_x, world_y)`.
+    Each entry is `(station, perp_offset, world_x, world_y)`.
     Order: start-LEFT, start-RIGHT, end-RIGHT, end-LEFT
     (counter-clockwise when looking down with alignment heading +X).
+
+    The plan corners anchor at SUPPORT stations (not bearing stations),
+    matching the edge-of-deck reference polylines in `bridge_lines.py`.
+    The deck plan extends to the support line — the bearing line sits
+    inside the deck.
     """
-    def _corner(deck_cs, perp_offset, support):
+    def _corner(perp_offset, support):
         x, y = al.point_on_skewed_bearing(
             alignment_obj,
-            deck_cs.bearing_station,
+            support.station,
             support.skew_angle,
             perp_offset,
         )
-        return (deck_cs.bearing_station, perp_offset, x, y)
+        return (support.station, perp_offset, x, y)
 
     deck_start = span.deck_start
     deck_end = span.deck_end
@@ -328,10 +352,10 @@ def _deck_plan_corners(
     end_right_perp = deck_end.top_vertices[-1].perp_offset
 
     return [
-        _corner(deck_start, start_left_perp, start_support),
-        _corner(deck_start, start_right_perp, start_support),
-        _corner(deck_end, end_right_perp, end_support),
-        _corner(deck_end, end_left_perp, end_support),
+        _corner(start_left_perp, start_support),
+        _corner(start_right_perp, start_support),
+        _corner(end_right_perp, end_support),
+        _corner(end_left_perp, end_support),
     ]
 
 
@@ -516,10 +540,8 @@ def _fat_cross_section_uv(
     Matrix3d transform anchors the cross-section to the path point
     where v=0 maps to path Z.
     """
-    # Crown perp at this span: we use the start-bearing crown_offset
-    # (constant per the typical Phase 1 case). For station-varying
-    # crown_offset, the fat cross-section won't track the variation —
-    # a follow-up slice.
+    # crown_offset is enforced constant at parse time (Phase 1 deck
+    # solid is a constant-section sweep), so any station works here.
     crown_perp = params.crown_offset.at(span.deck_start.bearing_station)
 
     # Top-of-deck elevations at the cross-section vertices, expressed
@@ -554,16 +576,51 @@ def _fat_cross_section_uv(
     return tuple((-perp, v) for (perp, v) in cs.vertices)
 
 
-def _build_trim_solid(corners_xy: List[Tuple[float, float]]):
+def _trim_z_range(
+    *,
+    min_station: float,
+    max_station: float,
+    profile_elevation_at: Callable[[float], float],
+    deck_profile_offset: float,
+) -> Tuple[float, float]:
+    """Return `(z_below, z_above)` for the trim prism.
+
+    Samples the profile elevation along the deck station range so the
+    prism tracks the deck's actual world-Z extent (regardless of the
+    bridge's absolute elevation), then pads by `_TRIM_Z_BUFFER_FT`.
+    """
+    if _TRIM_Z_SAMPLE_COUNT < 2:
+        raise DeckError("_TRIM_Z_SAMPLE_COUNT must be >= 2")
+    z_samples = []
+    for i in range(_TRIM_Z_SAMPLE_COUNT):
+        t = i / (_TRIM_Z_SAMPLE_COUNT - 1)
+        s = min_station + t * (max_station - min_station)
+        z_samples.append(profile_elevation_at(s) + deck_profile_offset)
+    return (
+        min(z_samples) - _TRIM_Z_BUFFER_FT,
+        max(z_samples) + _TRIM_Z_BUFFER_FT,
+    )
+
+
+def _build_trim_solid(
+    corners_xy: List[Tuple[float, float]],
+    *,
+    z_below: float,
+    z_above: float,
+):
     """Extrude the deck plan polygon vertically into a tall prism.
 
-    The prism extends from `_TRIM_BELOW_FT` to `_TRIM_ABOVE_FT` in Z,
-    so its boolean intersection with the fat deck preserves only the
-    fat-deck's XY extent within the polygon.
+    The prism extends from `z_below` to `z_above` in world Z, sized
+    to contain the fat-deck Z extent so the boolean intersect
+    preserves only the fat-deck's XY footprint within the polygon.
     """
     if len(corners_xy) < 3:
         raise DeckError(
             f"trim polygon needs >= 3 corners; got {len(corners_xy)}"
+        )
+    if z_above <= z_below:
+        raise DeckError(
+            f"trim solid requires z_above > z_below; got {z_below}..{z_above}"
         )
 
     pline = None
@@ -572,7 +629,7 @@ def _build_trim_solid(corners_xy: List[Tuple[float, float]]):
     region = None
     try:
         pline = Polyline()
-        pline.Elevation = _TRIM_BELOW_FT  # place polyline at low Z
+        pline.Elevation = z_below
         for i, (x, y) in enumerate(corners_xy):
             pline.AddVertexAt(i, Point2d(x, y), 0.0, 0.0, 0.0)
         pline.Closed = True
@@ -587,7 +644,7 @@ def _build_trim_solid(corners_xy: List[Tuple[float, float]]):
             )
         region = regions_dboc.get_Item(0)
 
-        height = _TRIM_ABOVE_FT - _TRIM_BELOW_FT
+        height = z_above - z_below
         solid = Solid3d()
         try:
             solid.CreateExtrudedSolid(region, Vector3d(0.0, 0.0, height), _zero_taper_options())

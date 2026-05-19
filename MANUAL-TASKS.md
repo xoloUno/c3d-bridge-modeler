@@ -376,25 +376,28 @@ forces the haunch top to coincide with the deck soffit exactly (vs. the
 ~0.09% slope artifact the trapezoidal sweep had in alignment-perpendicular
 sections under fanning skewed bridges). Reload trigger is at v25.
 
-- [ ] On Windows, `git pull` and update the .dyn's Python node body to
+- [x] On Windows, `git pull` and update the .dyn's Python node body to
       v25 (no `_OWN_MODULES` changes since v23, so bumping the trigger
       inline is fine if you prefer that).
-- [ ] Re-run the graph against `test/params.phase1.local.json` (the
+- [x] Re-run the graph against `test/params.phase1.local.json` (the
       D-E asymmetric-skew test). Watch node summary should still show
       `Haunches: built 4 (...); purged 4 prior entities` with no
       errors.
-- [ ] In 3D view: haunches should still appear on top of girders,
+- [x] In 3D view: haunches should still appear on top of girders,
       with the same overall geometry as v24. Visual diff against v24
       should be small — only the top surfaces change.
-- [ ] **Section cut perpendicular to the alignment** near each end of
+- [x] **Section cut perpendicular to the alignment** near each end of
       the bridge. Slope between the two visible top corners of one
       haunch should read **2.0%** (or within ~0.008% — the projection
       residue from the small fan angle). This is the test that
       previously gave 2.09% / 1.9% and is the main thing the refactor
       is supposed to fix.
-- [ ] Confirm no gap or Z-fight between the haunch tops and the deck
+- [x] Confirm no gap or Z-fight between the haunch tops and the deck
       soffit. The haunch top should now lie on the deck soffit
       surface for every (X, Y) in the haunch's plan footprint.
+
+**Verified 2026-05-19 on Windows.** Haunch boolean-trim approach is
+functional; tops coincide with deck soffit exactly.
 
 If the v25 verification surfaces anything unexpected, the prior
 implementation lives at git tag-or-commit `242082f` (commit before
