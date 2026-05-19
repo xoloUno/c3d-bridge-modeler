@@ -169,6 +169,45 @@ def ensure_phase1_decks(
     return {"created": created, "purged": purged}
 
 
+def build_fat_deck_cutter(
+    *,
+    alignment_obj,
+    params,
+    span,
+    profile_elevation_at: Callable[[float], float],
+    station_buffer_ft: float = 20.0,
+    perp_buffer_ft: float = 10.0,
+):
+    """Build a non-database-resident "fat" deck `Solid3d` for use as a
+    boolean cutter (e.g. by `haunches` when trimming over-tall haunch
+    boxes to the deck soffit).
+
+    The cutter is a swept solid (skipping the trim step) wider and
+    longer than the actual deck — generous in both axes so any haunch
+    inside the deck plan is fully contained in its plan footprint.
+    Caller owns the returned `Solid3d` and must `.Dispose()` it (or
+    consume it via a boolean op).
+    """
+    min_station = span.deck_start.bearing_station - station_buffer_ft
+    max_station = span.deck_end.bearing_station + station_buffer_ft
+    perp_offsets = [
+        tv.perp_offset
+        for tv in tuple(span.deck_start.top_vertices) + tuple(span.deck_end.top_vertices)
+    ]
+    min_perp = min(perp_offsets) - perp_buffer_ft
+    max_perp = max(perp_offsets) + perp_buffer_ft
+    return _build_fat_deck_swept(
+        alignment_obj=alignment_obj,
+        params=params,
+        span=span,
+        min_station=min_station,
+        max_station=max_station,
+        min_perp=min_perp,
+        max_perp=max_perp,
+        profile_elevation_at=profile_elevation_at,
+    )
+
+
 # ----------------------------------------------------------------------
 # Internals
 # ----------------------------------------------------------------------

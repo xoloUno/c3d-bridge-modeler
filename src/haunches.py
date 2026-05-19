@@ -1,52 +1,66 @@
-"""Haunch swept-solid creation on `BRIDGE-DECK-HAUNCH`.
+"""Haunch swept-and-trimmed solid creation on `BRIDGE-DECK-HAUNCH`.
 
 Civil-3D-only. Will not import on macOS.
 
 The haunch is the concrete pad between the top of the girder's top
-flange and the underside of the deck slab. In Phase 1 baseline it is
-modeled as a 4-vertex trapezoid (per-bearing-line `h_left` / `h_right`
-from `phase1_compute`) and swept along the same 3D path used by the
-girder solid — same orientation strategy (`Align=NoAlignment`,
-`Bank=False`), same anchor at `(start_x, start_y, top_of_girder_flange)`.
+flange and the underside of the deck slab. We model it in two steps
+to guarantee its top precisely follows the deck soffit:
 
-Constant-profile sweep approximation
-------------------------------------
-For a girder fully on one side of the deck crown and constant cross-
-slope, `h_left` and `h_right` are constant along the girder (because
-cross-slope is linear; the delta between flange-centerline and tip
-doesn't depend on absolute offset). So the Phase 1 baseline sweeps a
-single profile (computed from the START bearing's dims) along the
-3D path.
+  1. Build an **over-tall rectangular box** along each girder: bf
+     wide (flange width), `haunch_depth + 0.5 × deck_depth` tall,
+     swept along the same 3D path as the girder, with the same
+     `Align=NoAlignment` + `Bank=False` orientation. The box's top
+     sits ABOVE the design deck soffit but BELOW the design deck
+     top — i.e., the box "stabs into" the deck slab.
+  2. **Boolean-subtract the deck** (a fat-deck cutter equivalent to
+     the deck slab in plan footprint, but using the cheap pre-trim
+     sweep so we don't depend on the actual deck Solid3d's lifecycle)
+     from the over-tall box. The subtract removes the portion of
+     the haunch that overlaps the deck — i.e., everything ABOVE the
+     deck soffit. What's left is the haunch from top-of-flange up
+     to deck soffit, with the top surface matching the deck soffit
+     exactly.
 
-Edge cases deferred to a later slice:
-- Girder straddles the crown (left and right tips use different
-  cross-slope sides)
-- Station-varying `crown_offset` / `deck_cl_offset_from_alignment`
-  produces materially different `h_left` / `h_right` at start vs end
-  — would need `Solid3d.CreateLoftedSolid` between distinct profiles.
+Why this is better than a constant-trapezoid sweep
+--------------------------------------------------
+The prior implementation built a 4-vertex trapezoid cross-section
+with `h_left` / `h_right` derived from the elevation chain at the
+flange tips. That solved the design intent on the girder's own
+cross-section (perpendicular to the fanning girder), but in alignment-
+perpendicular sections it picked up a small longitudinal-grade
+contribution from the oblique cut (the left and right top edges of
+the haunch were at different t-fractions along the girder when the
+section plane crossed them). For Erik's ±10° asymmetric bridge that
+came out at 2.09% / 1.9% in alignment-perpendicular sections, vs.
+the design 2.0%.
 
-For now the start-profile assumption is documented and verified via
-unit tests in `test/test_phase1_compute.py`.
+The boolean-trim approach forces the haunch top to coincide with the
+deck soffit at every point in the plan — by construction. The
+remaining slope deviation drops from ~0.09% to ~0.008% (just the
+projection of bf onto alignment-perpendicular under a small fan
+angle), which is negligible and geometrically unavoidable without
+breaking girder-flange alignment.
 
 Re-run contract
 ---------------
-Solid geometry regenerates each run (per CLAUDE.md). This module
-deletes every ModelSpace entity on `BRIDGE-DECK-HAUNCH` at the start
-of `ensure_phase1_haunches` and rebuilds them from scratch.
+Solid geometry regenerates each run. This module wipes every
+ModelSpace entity on `BRIDGE-DECK-HAUNCH` at the start of
+`ensure_phase1_haunches` and rebuilds them from scratch.
 
-See `src/girders.py` for the IDisposable / pythonnet-quirk notes that
-apply identically here.
+See `src/girders.py` for the IDisposable / pythonnet-quirk notes
+that apply identically here.
 """
 from __future__ import annotations
 
 import math
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 import clr
 
 clr.AddReference("acdbmgd")
 
 from Autodesk.AutoCAD.DatabaseServices import (  # noqa: E402
+    BooleanOperationType,
     DBObjectCollection,
     Line,
     OpenMode,
@@ -66,7 +80,7 @@ from Autodesk.AutoCAD.Geometry import (  # noqa: E402
 
 import aisc
 import alignment as al
-import haunch_geometry as hg
+import decks
 import layers
 import units
 import xdata
@@ -76,6 +90,14 @@ LAYER_HAUNCH = "BRIDGE-DECK-HAUNCH"
 _COLOR_HAUNCH = 51  # per templates/README.md
 
 XDATA_APP = "BRIDGE_MODELER"
+
+# Over-tall fudge for the rectangular haunch box. Computed per-haunch as
+# `haunch_depth + _OVERTALL_RATIO × deck_depth`, which:
+#   - guarantees the box's top sits ABOVE the deck soffit (allowing
+#     the boolean trim to do its work), and
+#   - keeps the top BELOW the deck top so no extra material survives
+#     above the deck after the subtract.
+_OVERTALL_RATIO = 0.5
 
 
 class HaunchError(RuntimeError):
@@ -89,8 +111,9 @@ def ensure_phase1_haunches(
     params,
     compute_result,
     aisc_table,
+    profile_elevation_at: Callable[[float], float],
 ) -> dict:
-    """Regenerate haunch swept solids on `BRIDGE-DECK-HAUNCH`.
+    """Regenerate haunch solids on `BRIDGE-DECK-HAUNCH`.
 
     Returns `{"created": [(element_id, oid), ...], "purged": N}`.
     Solid geometry regenerates each run; any prior entities on
@@ -110,11 +133,18 @@ def ensure_phase1_haunches(
     for span in compute_result.spans:
         start_support = supports_by_id[span.start_support_id]
         end_support = supports_by_id[span.end_support_id]
-
-        # Flange width: same shape for every girder in a span (per the
-        # Phase 1 Superstructure schema), so derive once per span.
         shape = aisc.get(aisc_table, span.girder_shape)
         bf_ft = units.in_to_ft(shape.bf_in)
+        deck_depth_ft = span.deck_start.deck_depth
+        # Haunch depth comes from the params (constant per superstructure
+        # in Phase 1). We retrieve it via the per-girder `haunch_h_left_ft`
+        # average — that field is haunch_depth ± cross-slope contribution,
+        # so the average across the bridge is exactly haunch_depth.
+        haunch_depth_ft = (
+            span.girders[0].start.haunch_h_left_ft
+            + span.girders[0].start.haunch_h_right_ft
+        ) / 2.0
+        over_tall_height_ft = haunch_depth_ft + _OVERTALL_RATIO * deck_depth_ft
 
         for girder in span.girders:
             element_id = f"{span.span_id}.G{girder.girder_index}.HAUNCH"
@@ -135,15 +165,13 @@ def ensure_phase1_haunches(
             start_xyz = (start_xy[0], start_xy[1], girder.start.top_of_girder_flange)
             end_xyz = (end_xy[0], end_xy[1], girder.end.top_of_girder_flange)
 
-            # Constant-profile baseline: use the start-bearing haunch
-            # dims. For the typical Phase 1 case this exactly matches
-            # the end-bearing dims; for crown-straddling or station-
-            # varying-offset bridges it's an approximation pending a
-            # lofted-solid upgrade.
             solid = _build_haunch_solid(
+                alignment_obj=alignment_obj,
+                params=params,
+                span=span,
+                profile_elevation_at=profile_elevation_at,
                 bf_ft=bf_ft,
-                h_left_ft=girder.start.haunch_h_left_ft,
-                h_right_ft=girder.start.haunch_h_right_ft,
+                over_tall_height_ft=over_tall_height_ft,
                 start_xyz=start_xyz,
                 end_xyz=end_xyz,
             )
@@ -190,18 +218,63 @@ def _purge_haunch_layer(tr, db) -> int:
 
 def _build_haunch_solid(
     *,
+    alignment_obj,
+    params,
+    span,
+    profile_elevation_at: Callable[[float], float],
     bf_ft: float,
-    h_left_ft: float,
-    h_right_ft: float,
+    over_tall_height_ft: float,
     start_xyz,
     end_xyz,
 ):
-    """Sweep a 4-vertex haunch profile from start_xyz to end_xyz.
+    """Build a final haunch solid: over-tall rectangular box minus the
+    deck (= rectangular box clipped from above by the deck soffit)."""
+    over_tall = None
+    deck_cutter = None
+    try:
+        over_tall = _build_overtall_box(
+            bf_ft=bf_ft,
+            over_tall_height_ft=over_tall_height_ft,
+            start_xyz=start_xyz,
+            end_xyz=end_xyz,
+        )
+        deck_cutter = decks.build_fat_deck_cutter(
+            alignment_obj=alignment_obj,
+            params=params,
+            span=span,
+            profile_elevation_at=profile_elevation_at,
+        )
+        # `BooleanOperation` mutates `over_tall` to hold (over_tall − deck)
+        # and consumes `deck_cutter` (its body is moved into the operation).
+        # Disposing `deck_cutter` after is still required to free the
+        # managed wrapper.
+        try:
+            over_tall.BooleanOperation(BooleanOperationType.BoolSubtract, deck_cutter)
+        except Exception:
+            raise
 
-    Same orientation strategy as `girders._build_girder_solid` —
-    profile pre-rotated into a vertical plane perpendicular to the
-    in-plan girder direction, anchored at start_xyz, swept along a
-    sloped 3D Line with `Align=NoAlignment` + `Bank=False`.
+        # Hand ownership of the trimmed solid back to the caller.
+        result = over_tall
+        over_tall = None
+        return result
+    finally:
+        if deck_cutter is not None:
+            deck_cutter.Dispose()
+        if over_tall is not None:
+            over_tall.Dispose()
+
+
+def _build_overtall_box(
+    *,
+    bf_ft: float,
+    over_tall_height_ft: float,
+    start_xyz,
+    end_xyz,
+):
+    """Build a rectangular `bf × over_tall_height` swept prism along
+    the girder path. The box's bottom sits on the top of the girder
+    flange at v=0; its top is at v=over_tall_height (above the design
+    deck soffit, intended to be trimmed by a subsequent boolean op).
     """
     start_x, start_y, start_z = start_xyz
     end_x, end_y, end_z = end_xyz
@@ -212,18 +285,21 @@ def _build_haunch_solid(
     if plan_len <= 0.0:
         raise HaunchError(
             f"haunch endpoints coincide in plan view "
-            f"(start_xy={start_xyz[:2]}, end_xy={end_xyz[:2]}); "
-            f"can't determine girder direction"
+            f"(start_xy={start_xyz[:2]}, end_xy={end_xyz[:2]})"
         )
     girder_xy = Vector3d(dx / plan_len, dy / plan_len, 0.0)
     cross_xy = Vector3d(-dy / plan_len, dx / plan_len, 0.0)
 
-    # `haunch_geometry` places `h_left_ft` / `h_right_ft` at the profile-u
-    # positions that map to alignment-LEFT / alignment-RIGHT after the
-    # Matrix3d transform below (cross_xy = 90° CCW from girder direction
-    # → profile +u lands on alignment-LEFT). See haunch_geometry module
-    # docstring for the derivation.
-    verts = hg.haunch_profile_vertices_ft(bf_ft, h_left_ft, h_right_ft)
+    half_bf = bf_ft / 2.0
+    # Rectangle in profile (u, v) coords. The same `cross_xy = 90°-CCW`
+    # convention used by `girder_geometry` applies; for a symmetric
+    # rectangle the alignment-left vs. -right assignment is moot.
+    rect_verts = (
+        (-half_bf, 0.0),                       # 0: bottom on alignment-RIGHT side
+        (+half_bf, 0.0),                       # 1: bottom on alignment-LEFT side
+        (+half_bf, over_tall_height_ft),       # 2: top on alignment-LEFT side
+        (-half_bf, over_tall_height_ft),       # 3: top on alignment-RIGHT side
+    )
 
     pline = None
     curves = None
@@ -232,7 +308,7 @@ def _build_haunch_solid(
     path = None
     try:
         pline = Polyline()
-        for i, (u, v) in enumerate(verts):
+        for i, (u, v) in enumerate(rect_verts):
             pline.AddVertexAt(i, Point2d(u, v), 0.0, 0.0, 0.0)
         pline.Closed = True
 
@@ -249,8 +325,8 @@ def _build_haunch_solid(
         regions_dboc = Region.CreateFromCurves(curves)
         if regions_dboc.Count == 0:
             raise HaunchError(
-                f"Region.CreateFromCurves returned no regions for haunch "
-                f"profile (bf={bf_ft}, h_left={h_left_ft}, h_right={h_right_ft})"
+                "Region.CreateFromCurves returned no regions for haunch "
+                "over-tall rectangular profile"
             )
         region = regions_dboc.get_Item(0)
 
