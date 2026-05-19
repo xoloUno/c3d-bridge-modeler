@@ -190,7 +190,7 @@ def compute(
                 super_,
                 support_id=start_support.support_id,
                 bearing_station=start_bearing_station,
-                profile_elevation=start_profile_elev,
+                profile_elevation_at=profile_elevation_at,
                 along_bearing_offset_from_deck_cl=start_along[g_idx],
                 skew_deg=start_support.skew_angle,
                 deck_cl_offset_from_alignment=deck_cl_offset_start,
@@ -203,7 +203,7 @@ def compute(
                 super_,
                 support_id=end_support.support_id,
                 bearing_station=end_bearing_station,
-                profile_elevation=end_profile_elev,
+                profile_elevation_at=profile_elevation_at,
                 along_bearing_offset_from_deck_cl=end_along[g_idx],
                 skew_deg=end_support.skew_angle,
                 deck_cl_offset_from_alignment=deck_cl_offset_end,
@@ -423,7 +423,7 @@ def _girder_at_bearing(
     *,
     support_id: str,
     bearing_station: float,
-    profile_elevation: float,
+    profile_elevation_at: Callable[[float], float],
     along_bearing_offset_from_deck_cl: float,
     skew_deg: float,
     deck_cl_offset_from_alignment: float,
@@ -431,12 +431,31 @@ def _girder_at_bearing(
     flange_width_ft: float,
     bearing_device_height_ft: float,
 ) -> GirderAtBearing:
-    cos_skew = math.cos(math.radians(skew_deg))
+    skew_rad = math.radians(skew_deg)
+    cos_skew = math.cos(skew_rad)
+    sin_skew = math.sin(skew_rad)
     perpendicular_offset = (
         along_bearing_offset_from_deck_cl * cos_skew + deck_cl_offset_from_alignment
     )
 
-    crown_offset_here = params.crown_offset.at(bearing_station)
+    # The girder's bearing point lies on the bearing line at this perp_offset.
+    # For a non-zero skew, the bearing line tilts: a point at perp_offset X on
+    # a bearing line crossing the alignment at station S with skew θ has
+    # WORLD station S + X·tan(θ). The profile elevation that determines this
+    # girder's top-of-flange Z must be sampled at THAT world station, not at
+    # the bearing station — otherwise every girder on the bearing line
+    # shares one baseline elevation, and the apparent cross-slope in an
+    # alignment-perpendicular section gets distorted by the longitudinal
+    # grade contribution (each girder is at a different t-fraction along
+    # its own length at the section station).
+    if cos_skew == 0.0:
+        raise Phase1ComputeError(
+            f"Support skew {skew_deg}° produces cos(skew)=0; |skew| must be < 90°"
+        )
+    world_station = bearing_station + perpendicular_offset * (sin_skew / cos_skew)
+    profile_elevation = profile_elevation_at(world_station)
+
+    crown_offset_here = params.crown_offset.at(world_station)
 
     top_of_deck = elevation.top_of_deck_at_offset(
         profile_elevation=profile_elevation,

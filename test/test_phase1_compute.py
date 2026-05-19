@@ -468,6 +468,72 @@ def test_format_text_report_smoke():
 # Cross-slope sanity at the chain boundary (zero-skew baseline)
 # ----------------------------------------------------------------------
 
+def test_girder_profile_evaluated_at_world_station_not_bearing_station(tmp_path):
+    """For skewed supports, each girder's bearing point sits at a different
+    world station than the bearing line crossing. The profile elevation for
+    each girder must be sampled at that world station — otherwise every
+    girder on the bearing line shares one baseline Z and the apparent cross-
+    slope in alignment-perpendicular sections gets distorted.
+
+    Set up: linear profile with -5% grade, +10° skew at start. The far-
+    alignment-LEFT girder and the far-alignment-RIGHT girder sit at
+    different world stations on the same bearing line, so a non-trivial
+    profile gradient produces different top-of-deck elevations for them
+    that exactly track design intent.
+    """
+    raw = _load_example_raw()
+    raw["supports"][0]["skew_angle"] = 10.0
+    params = _params_from(raw, tmp_path)
+    table = aisc.load()
+    # Linear profile, -5% grade from base 120 at station 1000.
+    profile = _linear_profile_at(1000.0, 120.0, -0.05)
+    result = pc.compute(params, table, profile_elevation_at=profile)
+
+    g1 = result.spans[0].girders[0]
+    g4 = result.spans[0].girders[3]
+    bearing_station = g1.start.bearing_station
+    tan_skew = math.tan(math.radians(10.0))
+
+    # Each girder's bearing point sits at WORLD station
+    #   bearing_station + perp_offset × tan(skew).
+    g1_world_station = bearing_station + g1.start.girder_offset * tan_skew
+    g4_world_station = bearing_station + g4.start.girder_offset * tan_skew
+    # Outer girders straddle the bearing station: alignment-LEFT one is
+    # back-station (uphill on a downhill grade), alignment-RIGHT is ahead.
+    assert g1_world_station < bearing_station < g4_world_station
+
+    # Compute expected top-of-deck values directly from design intent at the
+    # world-station profile.
+    def expected_top_deck(world_station, perp):
+        prof = profile(world_station)
+        slope = (
+            params.deck_cross_slope_left
+            if perp < params.crown_offset.at(world_station)
+            else params.deck_cross_slope_right
+        )
+        return prof + params.deck_profile_offset + (slope / 100.0) * abs(perp)
+
+    assert math.isclose(
+        g1.start.top_of_deck,
+        expected_top_deck(g1_world_station, g1.start.girder_offset),
+        abs_tol=1e-9,
+    )
+    assert math.isclose(
+        g4.start.top_of_deck,
+        expected_top_deck(g4_world_station, g4.start.girder_offset),
+        abs_tol=1e-9,
+    )
+    # Sanity: the world-station correction produces non-trivial profile
+    # variation across the bearing line. With ±12 ft perp range, +10° skew,
+    # and -5% grade, the profile differs across the bearing by
+    # 2 × 12 × tan(10°) × 0.05 ≈ 0.21 ft of grade contribution alone
+    # (separate from the cross-slope contribution).
+    grade_delta = abs(profile(g1_world_station) - profile(g4_world_station))
+    assert grade_delta > 0.2, (
+        f"expected ~0.21 ft grade contribution across bearing line; got {grade_delta}"
+    )
+
+
 def test_outer_girder_top_of_deck_matches_manual_calc():
     """Hand-calc top-of-deck at G1: profile=120, deck_offset=-0.25, slope=-2%, offset=-12."""
     params = p1.load(EXAMPLE_PARAMS)
