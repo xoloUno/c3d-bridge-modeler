@@ -11,11 +11,14 @@ angles, distorting the alignment-perpendicular cross-slope), we:
   1. Build a **fat deck**: sweep a wider-than-actual alignment-
      perpendicular cross-section along the alignment's 3D path
      (alignment XY + profile Z), running from before the start corner
-     to past the end corner. The cross-section is aligned to the path
-     tangent via `SweepOptionsAlignOption.AlignSweepEntityToPath` with
-     `Bank=False`, so the deck stays perpendicular to the alignment at
-     every point along the sweep — both for straight and curved
-     horizontal alignments — while keeping the web/walls plumb.
+     to past the end corner. The cross-section is pre-oriented
+     perpendicular to the alignment direction at the start and stays
+     fixed throughout the sweep (`Align=NoAlignment`, `Bank=False`).
+     On curved alignments the `Polyline3d` path follows the curve, so
+     the fat deck bends with the alignment in plan; the cross-section
+     doesn't rotate, producing a small cross-slope orientation error
+     bounded by `slope × (1 − cos θ)` — negligible for typical
+     bridge-on-curve geometries.
   2. Build a **trim volume**: vertically extrude the deck plan polygon
      — a many-vertex polygon whose left/right edges follow the
      alignment curve at perpendicular offset, connected by straight
@@ -527,16 +530,34 @@ def _build_fat_deck_swept(
             )
         region = regions_dboc.get_Item(0)
 
-        # Sweep options: AlignSweepEntityToPath + Bank=False.
-        # AlignSweepEntityToPath rotates the cross-section so its
-        # plane stays perpendicular to the path tangent at every
-        # point — necessary for curved horizontal alignments so the
-        # deck follows the curve.  On a straight path the tangent is
-        # constant, so this is equivalent to NoAlignment.
-        # Bank=False keeps the vertical (v) axis plumb regardless
-        # of horizontal curvature.
+        # Sweep options: NoAlignment + Bank=False.
+        #
+        # NoAlignment keeps the cross-section in its pre-set world
+        # orientation throughout the sweep.  We tried
+        # AlignSweepEntityToPath (which rotates the cross-section to
+        # follow the path tangent), but it ALSO repositions the
+        # cross-section to the path start using an internal reference
+        # point, which double-moves our already-placed cross-section
+        # and shifts the fat deck.  With NoAlignment the cross-section
+        # stays exactly where we placed it via the Matrix3d transform
+        # above.
+        #
+        # For curved horizontal alignments, the Polyline3d path still
+        # follows the curve, so the fat deck bends with the alignment
+        # in plan.  The cross-section doesn't rotate with the curve,
+        # so the cross-slope orientation diverges from the local
+        # alignment-perpendicular by angle θ (the curve deflection).
+        # The resulting cross-slope error is slope × (1 − cos θ),
+        # which is < 0.05% for a 2% slope on a 100 ft bridge at
+        # 500 ft radius.  The many-vertex trim polygon clips the fat
+        # deck to the correct curved plan footprint regardless of the
+        # cross-section orientation.
+        #
+        # Bank=False is set explicitly for clarity; it has no effect
+        # on straight or near-straight paths but prevents any
+        # banking on tightly curved ones.
         opts_builder = SweepOptionsBuilder()
-        opts_builder.Align = SweepOptionsAlignOption.AlignSweepEntityToPath
+        opts_builder.Align = SweepOptionsAlignOption.NoAlignment
         opts_builder.Bank = False
         opts_builder.TwistAngle = 0.0
         opts = opts_builder.ToSweepOptions()
