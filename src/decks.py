@@ -11,29 +11,29 @@ angles, distorting the alignment-perpendicular cross-slope), we:
   1. Build a **fat deck**: sweep a wider-than-actual alignment-
      perpendicular cross-section along the alignment's 3D path
      (alignment XY + profile Z), running from before the start corner
-     to past the end corner. With the cross-section perpendicular to
-     alignment and constant along the sweep, the design-intent cross-
-     slope is preserved exactly everywhere.
+     to past the end corner. The cross-section is aligned to the path
+     tangent via `SweepOptionsAlignOption.AlignSweepEntityToPath` with
+     `Bank=False`, so the deck stays perpendicular to the alignment at
+     every point along the sweep — both for straight and curved
+     horizontal alignments — while keeping the web/walls plumb.
   2. Build a **trim volume**: vertically extrude the deck plan polygon
-     (4 corners derived from compute_result + the skewed-bearing helper
-     — same math the `BRIDGE-NOPLOT` edge polylines use) up by a tall
-     extent so it fully contains the fat deck.
+     — a many-vertex polygon whose left/right edges follow the
+     alignment curve at perpendicular offset, connected by straight
+     bearing-line segments at the supports. For straight alignments
+     this degenerates to the same 4-corner polygon as Phase 1.
   3. Boolean **intersect** the fat deck with the trim volume → final
      deck with correct cross-slope AND correct skewed plan footprint.
 
 This is how a human modeler would draw it: extrude a generous deck,
-then cut away the triangular corners outside the actual deck plan.
+then cut away the material outside the actual deck plan.
 
-Limitations (deferred to later slices)
---------------------------------------
-- Assumes a **straight horizontal alignment**. With Bank=False on the
-  sweep, the cross-section doesn't rotate with the path; a curved
-  alignment would produce a straight prism instead of a curved deck.
-- Vertical alignment curves ARE handled (the sweep path follows the
-  profile via a sampled 3D polyline), as long as the horizontal
-  alignment is straight.
-- Future Phase 2+ work could add multi-point cross-section sampling
-  along a curved horizontal alignment.
+Limitations (deferred to Phase 3+)
+-----------------------------------
+- **Super-elevation** (station-varying cross-slope) requires a loft
+  through multiple cross-sections rather than a constant-section
+  sweep. Phase 2 assumes constant cross-slope per side.
+- **Station-varying deck width** (tapering) is handled by the trim
+  polygon with linearly-interpolated perpendicular offsets.
 
 Re-run contract
 ---------------
@@ -90,10 +90,9 @@ XDATA_APP = "BRIDGE_MODELER"
 # the fat deck always covers the trim volume.
 _PATH_STATION_BUFFER_FT = 5.0
 _CROSS_SECTION_PERP_BUFFER_FT = 5.0
-# Number of path sample stations between the extreme stations. More
-# samples → better vertical-curve fidelity. 21 = every ~4 ft for a
-# typical 80 ft bridge.
-_PATH_SAMPLE_COUNT = 21
+# Minimum path sample count. Actual count is density-driven (~1/ft)
+# via `_path_sample_count()`.
+_MIN_PATH_SAMPLES = 21
 # Trim volume vertical-buffer thickness (ft). The trim solid extrudes
 # from `min(path Z) - _TRIM_Z_BUFFER_FT` to
 # `max(path Z) + _TRIM_Z_BUFFER_FT` so it comfortably contains the
@@ -102,6 +101,24 @@ _PATH_SAMPLE_COUNT = 21
 _TRIM_Z_BUFFER_FT = 50.0
 # Number of profile samples used to size the trim Z extent.
 _TRIM_Z_SAMPLE_COUNT = 11
+
+
+def _path_sample_count(min_station: float, max_station: float) -> int:
+    """Return the number of sweep-path sample stations for the given
+    station range.  Targets ~1 sample per foot with a floor of
+    `_MIN_PATH_SAMPLES`.  Dense sampling is needed for curved
+    horizontal alignments so the `Polyline3d` path closely
+    approximates the curve.  On straight alignments the extra
+    collinear points have no effect on the result.
+    """
+    return max(_MIN_PATH_SAMPLES, int(math.ceil(max_station - min_station)))
+
+
+# Target spacing for intermediate edge-sample points in the trim
+# polygon (ft).  Produces ~1 point per 5 ft of station range —
+# dense enough for the trim polygon to track a horizontal curve but
+# not so dense that Region.CreateFromCurves becomes slow.
+_TRIM_EDGE_SAMPLE_SPACING_FT = 5.0
 
 
 class DeckError(RuntimeError):
@@ -246,8 +263,9 @@ def _build_deck_solid(
     profile_elevation_at: Callable[[float], float],
 ):
     """Build the final deck solid via sweep + boolean trim."""
-    # 1) Compute the four deck plan corners (world XY).
-    corners = _deck_plan_corners(
+    # 1) Compute the deck plan polygon (many-vertex on curved
+    #    alignments; degenerates to 4-corner on straight).
+    polygon_xy, station_perp_pairs = _deck_plan_polygon_xy(
         alignment_obj=alignment_obj,
         span=span,
         start_support=start_support,
@@ -255,13 +273,13 @@ def _build_deck_solid(
     )
 
     # 2) Determine the station range and cross-section perp range.
-    corner_stations = [c[0] for c in corners]
-    corner_perps = [c[1] for c in corners]
+    all_stations = [sp[0] for sp in station_perp_pairs]
+    all_perps = [sp[1] for sp in station_perp_pairs]
 
-    min_station = min(corner_stations) - _PATH_STATION_BUFFER_FT
-    max_station = max(corner_stations) + _PATH_STATION_BUFFER_FT
-    min_perp = min(corner_perps) - _CROSS_SECTION_PERP_BUFFER_FT
-    max_perp = max(corner_perps) + _CROSS_SECTION_PERP_BUFFER_FT
+    min_station = min(all_stations) - _PATH_STATION_BUFFER_FT
+    max_station = max(all_stations) + _PATH_STATION_BUFFER_FT
+    min_perp = min(all_perps) - _CROSS_SECTION_PERP_BUFFER_FT
+    max_perp = max(all_perps) + _CROSS_SECTION_PERP_BUFFER_FT
 
     # 3) Build the fat deck (sweep) and the trim volume (vertical
     #    extrusion), then intersect.
@@ -285,7 +303,7 @@ def _build_deck_solid(
             deck_profile_offset=params.deck_profile_offset,
         )
         trim_solid = _build_trim_solid(
-            corners_xy=[(c[2], c[3]) for c in corners],
+            corners_xy=polygon_xy,
             z_below=z_below,
             z_above=z_above,
         )
@@ -316,33 +334,33 @@ def _build_deck_solid(
             fat_deck.Dispose()
 
 
-def _deck_plan_corners(
+def _deck_plan_polygon_xy(
     *,
     alignment_obj,
     span,
     start_support,
     end_support,
-) -> List[Tuple[float, float, float, float]]:
-    """Return the 4 deck plan-view corners.
+) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]:
+    """Return `(polygon_xy, station_perp_pairs)` for the deck plan.
 
-    Each entry is `(station, perp_offset, world_x, world_y)`.
-    Order: start-LEFT, start-RIGHT, end-RIGHT, end-LEFT
-    (counter-clockwise when looking down with alignment heading +X).
+    `polygon_xy` is a list of `(world_x, world_y)` vertices forming a
+    closed polygon (CCW when looking down).  For straight alignments
+    the polygon has 4 corners identical to the Phase 1 behaviour.  For
+    curved horizontal alignments, the left/right deck edges are
+    approximated as many-vertex polyline segments following the
+    alignment curve at perpendicular offset, connected by straight
+    bearing-line segments at the supports.
 
-    The plan corners anchor at SUPPORT stations (not bearing stations),
-    matching the edge-of-deck reference polylines in `bridge_lines.py`.
-    The deck plan extends to the support line — the bearing line sits
-    inside the deck.
+    `station_perp_pairs` is a parallel list of `(station, perp_offset)`
+    for each vertex, used by the caller to derive the fat-deck station
+    and perp ranges.
+
+    Vertex order (CCW closed loop):
+      start_left → start_right                   (start bearing, straight)
+      → intermediate right-edge samples →         (right deck edge, curved)
+      end_right → end_left                        (end bearing, straight)
+      → intermediate left-edge samples (rev.) →   (left deck edge, curved)
     """
-    def _corner(perp_offset, support):
-        x, y = al.point_on_skewed_bearing(
-            alignment_obj,
-            support.station,
-            support.skew_angle,
-            perp_offset,
-        )
-        return (support.station, perp_offset, x, y)
-
     deck_start = span.deck_start
     deck_end = span.deck_end
 
@@ -351,12 +369,54 @@ def _deck_plan_corners(
     end_left_perp = deck_end.top_vertices[0].perp_offset
     end_right_perp = deck_end.top_vertices[-1].perp_offset
 
-    return [
-        _corner(start_left_perp, start_support),
-        _corner(start_right_perp, start_support),
-        _corner(end_right_perp, end_support),
-        _corner(end_left_perp, end_support),
-    ]
+    s_begin = start_support.station
+    s_end = end_support.station
+
+    # ---- helper: point on a skewed bearing at a support ----
+    def _bearing_pt(perp, support):
+        x, y = al.point_on_skewed_bearing(
+            alignment_obj, support.station, support.skew_angle, perp,
+        )
+        return (support.station, perp, x, y)
+
+    # ---- helper: intermediate edge samples (no bearing-line skew) ----
+    span_len = abs(s_end - s_begin)
+    n_intermediate = max(
+        0, int(math.ceil(span_len / _TRIM_EDGE_SAMPLE_SPACING_FT)) - 1
+    )
+
+    def _edge_samples(perp_start, perp_end):
+        """Return `(station, perp, x, y)` tuples for intermediate stations."""
+        pts = []
+        for i in range(1, n_intermediate + 1):
+            t = i / (n_intermediate + 1)
+            sta = s_begin + t * (s_end - s_begin)
+            perp = perp_start + t * (perp_end - perp_start)
+            x, y = al.point_at_station(alignment_obj, sta, perp)
+            pts.append((sta, perp, x, y))
+        return pts
+
+    # ---- assemble polygon vertices (CCW) ----
+    all_verts = []  # list of (station, perp, x, y)
+
+    # 1) Start bearing: left → right
+    all_verts.append(_bearing_pt(start_left_perp, start_support))
+    all_verts.append(_bearing_pt(start_right_perp, start_support))
+
+    # 2) Right edge: start → end (intermediate samples)
+    all_verts.extend(_edge_samples(start_right_perp, end_right_perp))
+
+    # 3) End bearing: right → left
+    all_verts.append(_bearing_pt(end_right_perp, end_support))
+    all_verts.append(_bearing_pt(end_left_perp, end_support))
+
+    # 4) Left edge: end → start (intermediate samples, reversed)
+    left_fwd = _edge_samples(start_left_perp, end_left_perp)
+    all_verts.extend(reversed(left_fwd))
+
+    polygon_xy = [(v[2], v[3]) for v in all_verts]
+    station_perp_pairs = [(v[0], v[1]) for v in all_verts]
+    return polygon_xy, station_perp_pairs
 
 
 def _build_fat_deck_swept(
@@ -377,12 +437,12 @@ def _build_fat_deck_swept(
     """
     deck_depth = span.deck_start.deck_depth
 
-    # Build the 3D path as a Polyline3d sampling profile Z at each
-    # interior station between min/max. The path is along the alignment
-    # XY (straight horizontal alignment assumed) with Z = profile + the
-    # deck_profile_offset (which makes the path follow the deck-top
-    # crown elevation — and v=0 of the cross-section then sits at that
-    # path Z, anchoring the cross-section's crown to the path).
+    # Build the 3D path as a Polyline3d sampling the alignment XY +
+    # profile Z at densely-spaced stations.  Z = profile +
+    # deck_profile_offset (deck-top crown elevation).  v=0 of the
+    # cross-section sits at path Z, anchoring the crown to the path.
+    # Dense sampling (~1/ft via `_path_sample_count`) ensures the
+    # polyline closely follows curved horizontal alignments.
     path_points = _build_path_3d_points(
         alignment_obj=alignment_obj,
         min_station=min_station,
@@ -467,11 +527,16 @@ def _build_fat_deck_swept(
             )
         region = regions_dboc.get_Item(0)
 
-        # Sweep options: Align=NoAlignment + Bank=False so the cross-
-        # section keeps its alignment-perpendicular orientation
-        # throughout the (possibly vertically-curved) path.
+        # Sweep options: AlignSweepEntityToPath + Bank=False.
+        # AlignSweepEntityToPath rotates the cross-section so its
+        # plane stays perpendicular to the path tangent at every
+        # point — necessary for curved horizontal alignments so the
+        # deck follows the curve.  On a straight path the tangent is
+        # constant, so this is equivalent to NoAlignment.
+        # Bank=False keeps the vertical (v) axis plumb regardless
+        # of horizontal curvature.
         opts_builder = SweepOptionsBuilder()
-        opts_builder.Align = SweepOptionsAlignOption.NoAlignment
+        opts_builder.Align = SweepOptionsAlignOption.AlignSweepEntityToPath
         opts_builder.Bank = False
         opts_builder.TwistAngle = 0.0
         opts = opts_builder.ToSweepOptions()
@@ -512,7 +577,7 @@ def _build_path_3d_points(
     matching the elevation chain.
     """
     pts: List[Point3d] = []
-    n = max(2, _PATH_SAMPLE_COUNT)
+    n = max(2, _path_sample_count(min_station, max_station))
     for i in range(n):
         t = i / float(n - 1)
         station = min_station + t * (max_station - min_station)

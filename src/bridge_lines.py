@@ -1,4 +1,4 @@
-"""bridge_lines.py module v4 — anchor at support stations, not bearings.
+"""bridge_lines.py module v5 — dense edge-polyline sampling for curves.
 
 Bridge reference-line creation in Civil 3D.
 
@@ -35,6 +35,7 @@ Civil-3D-only. Will not import on macOS.
 """
 from __future__ import annotations
 
+import math
 from typing import List, Tuple
 
 import clr
@@ -71,7 +72,7 @@ XDATA_KEY = "bridge_line"
 # edits to a polyline whose schema_version matches the current code
 # are still preserved via the find-or-create path.
 _SCHEMA_VERSION_KEY = "schema_version"
-_SCHEMA_VERSION = "v4-support-anchor"
+_SCHEMA_VERSION = "v5-curved-edge"
 
 # Reference-line names. Phase 1 = single bridge per drawing; multi-bridge
 # namespacing is an open question (scope.md "Open Questions").
@@ -98,7 +99,7 @@ def ensure_phase1_bridge_lines(
     names exists in the drawing, this function leaves it alone (matching
     the two-mode workflow).
     """
-    print("[bridge_lines] entering ensure_phase1_bridge_lines (v4)")
+    print("[bridge_lines] entering ensure_phase1_bridge_lines (v5)")
     # Use the original-signature ensure_layer (color only) so we don't
     # depend on a fresh layers.py reload — empirically OneDrive + Python's
     # __pycache__ can leave stale .pyc files even after a clean git pull.
@@ -175,6 +176,13 @@ def _set_layer_plot_and_lock(tr, layer_id, *, plottable: bool, locked: bool) -> 
     if needs_lock:
         rec.IsLocked = locked
 
+# Target spacing for intermediate edge-polyline vertices (ft).
+# Denser than the support-only vertices used in Phase 1, so the
+# polylines follow curved horizontal alignments.  On straight
+# alignments the extra collinear points are invisible.
+_EDGE_SAMPLE_SPACING_FT = 10.0
+
+
 def _vertex_specs(params, compute_result) -> List[Tuple[float, float]]:
     """Return sorted [(station, skew_deg), ...] for each polyline vertex.
 
@@ -186,9 +194,11 @@ def _vertex_specs(params, compute_result) -> List[Tuple[float, float]]:
     Always includes:
       - start support station with start support's skew angle
       - end support station with end support's skew angle
-    Optionally includes internal control points of
-    `deck_cl_offset_from_alignment` (strictly between the supports) with
-    skew_deg = 0 (no support there → no bearing-line skew applies).
+    Intermediate vertices are inserted at ~`_EDGE_SAMPLE_SPACING_FT`
+    intervals so the polylines approximate curved horizontal
+    alignments.  `deck_cl_offset_from_alignment` control points
+    (strictly between supports) are also included.  Intermediate
+    points carry skew_deg = 0 (no bearing line at those stations).
     """
     if not compute_result.spans:
         raise BridgeLineError("compute_result has no spans")
@@ -209,9 +219,22 @@ def _vertex_specs(params, compute_result) -> List[Tuple[float, float]]:
         (s_begin, start_support.skew_angle),
         (s_end, end_support.skew_angle),
     ]
+
+    # Intermediate evenly-spaced samples for curve fidelity.
+    span_len = abs(s_end - s_begin)
+    n_intermediate = max(
+        0, int(math.ceil(span_len / _EDGE_SAMPLE_SPACING_FT)) - 1
+    )
+    for i in range(1, n_intermediate + 1):
+        t = i / (n_intermediate + 1)
+        specs.append((s_begin + t * (s_end - s_begin), 0.0))
+
+    # deck_cl_offset control points (may duplicate a sample — deduped
+    # implicitly by the sort; the polyline tolerates coincident vertices).
     for s, _v in params.deck_cl_offset_from_alignment.points:
         if s_begin < s < s_end:
             specs.append((s, 0.0))
+
     specs.sort(key=lambda spec: spec[0])
     return specs
 

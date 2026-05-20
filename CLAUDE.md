@@ -65,7 +65,7 @@ test/                  Test parameter files and expected outputs
 
 ## Current Phase
 
-**Phase 1: Single-Span Straight Bridge** — model a complete single-span steel girder bridge on a straight alignment. See `scope.md` Phase 1 section for the full deliverables list.
+**Phase 2: Curved Horizontal Alignment** — extend the Phase 1 superstructure to work on curved (arc / spiral) horizontal alignments. See `docs/phase2-scope.md` for the detailed scope. Super-elevation and curved girders are deferred to Phase 3; girders remain straight chords between bearings.
 
 ### Done (Phase 1, pure-math + skeleton)
 - AISC W-shape lookup table (`data/aisc_w_shapes.json`, 266 W10–W44 shapes; sourced from steelpy, Apache-2.0; spot-check task in `MANUAL-TASKS.md`)
@@ -85,6 +85,14 @@ test/                  Test parameter files and expected outputs
 - C3D-side build orchestrator (`src/phase1_build.py`) and Dynamo node body (`src/phase1_node.py`) verified end-to-end on a real `D-E` alignment with ±10° asymmetric skew, fanning deck width (22→25 ft), -5% longitudinal grade, and `bearing_offsets: [1.5]` / `[-1.5]`. After the F2 fix (PR #14, commit `d368f4d`), deck slab plan corners coincide with the `BRIDGE-NOPLOT` edge polyline endpoints exactly — verified 2026-05-19 on Windows. Phase 1 superstructure (skeleton + girders + haunches + deck) is functional and dimensionally correct.
 - Bridge-line schema self-heal (PR #15, commit `7c65501`) — `BRIDGE-EDGE-L/R/BRIDGE-CL` polylines carry a `schema_version` stamp in xdata. When the polyline-generation algorithm changes, bump `_SCHEMA_VERSION` in `src/bridge_lines.py`; the next run erases unstamped/mismatched polylines (force-opening through the layer lock) and regenerates them. Designer edits within the same schema_version stay preserved.
 
+### Done (Phase 2, curved horizontal alignment)
+- Curved deck sweep (`src/decks.py`) — three changes: (1) density-driven path sampling (~1 sample/ft, min 21, via `_path_sample_count()`) so the `Polyline3d` sweep path closely approximates curved alignments; (2) sweep option switched from `NoAlignment` to `AlignSweepEntityToPath` so the cross-section rotates with the path tangent while `Bank=False` keeps the vertical axis plumb; (3) trim polygon generalized from 4-corner to many-vertex (`_deck_plan_polygon_xy`) where left/right deck edges are sampled along the alignment curve at perpendicular offset (~1 pt per 5 ft), connected by straight bearing-line segments at supports. For straight alignments this degenerates to the Phase 1 behaviour (collinear intermediate points, constant tangent). `build_fat_deck_cutter` (used by `haunches.py`) inherits these changes automatically.
+- Dense edge polylines (`src/bridge_lines.py`) — intermediate vertices at ~10 ft spacing between support stations so the `BRIDGE-EDGE-L/R` polylines follow curved alignments. Schema version bumped from `v4-support-anchor` to `v5-curved-edge`; stale polylines self-heal on first post-update run.
+- Girders (`src/girders.py`) — **unchanged**; girders remain straight chords between bearings per Phase 2 scope. Curved/chorded girders are Phase 3.
+- Haunches (`src/haunches.py`) — **unchanged**; the deck cutter now follows the curve automatically.
+- Pure-math layer — **unchanged**; all 162 macOS tests still pass.
+- Pending Windows verification on a curved-alignment test drawing — see `MANUAL-TASKS.md` "Phase 2 curved horizontal alignment" section.
+
 ### Known deferrals (gated at params parse time)
 - **`follow_superelevation: true`** — alignment-superelevation tracking is not implemented; setting `true` raises `Phase1ParamsError` rather than silently rendering a non-superelevated deck.
 - **Station-varying `crown_offset` / `deck_cl_offset_from_alignment`** — deck solid construction is a constant-section sweep, so multi-point profiles (or two endpoints with differing values) raise `Phase1ParamsError`. Reference polylines support the variation, but the slab geometry doesn't yet — lifting this is on the Phase 2 deck-sweep work.
@@ -92,7 +100,12 @@ test/                  Test parameter files and expected outputs
 - **Per-layer purge** (`BRIDGE-GIRDER`, `BRIDGE-DECK`, `BRIDGE-DECK-HAUNCH`) erases every entity on the layer, not just xdata-tagged tool output. Acceptable for single-bridge drawings; multi-bridge support needs xdata-filtered, bridge-id-scoped purging.
 
 ### Next up
-Phase 2: curved horizontal alignments. Detailed scope in [docs/phase2-scope.md](docs/phase2-scope.md). Substructure (pier caps, columns, abutments, footings) is a separate Phase 2 candidate covered in the same scope doc.
+Phase 3 candidates (see `docs/phase2-scope.md` § "Other Phase 2 candidates" for details):
+- **Super-elevation** (station-varying cross-slope) — requires loft through multiple cross-sections instead of constant-section sweep.
+- **Curved/chorded girders** — for tight curves, real girders are curved (rolled arcs) or chorded (straight segments with field splices).
+- **Substructure** — pier caps, columns, abutments, footings. Layers listed in `templates/README.md`. Cap-to-girder tie-in via bearing-seat elevations already computed.
+- **Multi-span** — multiple `Span` entries linking shared piers; schema and compute orchestrator already support the loop.
+- **Plate girders** — custom-width built-up sections vs. AISC rolled W-shapes.
 
 ### Phase 0 (complete, 2026-05-06)
 Foundation & proof-of-concept verified — see `MANUAL-TASKS.md` for the verification record. The Phase 0 pipeline (JSON params → 3 `Solid3d` boxes on `BRIDGE-*` layers with xdata) is the baseline Phase 1 builds on.
