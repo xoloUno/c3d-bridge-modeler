@@ -122,9 +122,12 @@ def test_station_varying_crown_offset_rejected():
         p1.parse(raw)
 
 
-def test_station_varying_deck_cl_offset_rejected():
-    """Station-varying deck_cl_offset_from_alignment is deferred (Phase 2+)
-    for the same reason as crown_offset above.
+def test_shifting_deck_cl_with_crown_kink_rejected():
+    """Shifting deck_cl_offset_from_alignment is only supported when the
+    deck cross-section has no crown kink at any bearing.  The default
+    valid_raw() has slopes (-2, -2) with crown_offset=0 inside deck
+    [-15, 15] → kink present at both bearings.  Adding a CL shift must
+    therefore be rejected with the kink-specific error message.
     """
     raw = _valid_raw()
     raw["deck_cl_offset_from_alignment"] = [
@@ -133,7 +136,58 @@ def test_station_varying_deck_cl_offset_rejected():
     ]
     with pytest.raises(
         p1.Phase1ParamsError,
-        match="station-varying deck_cl_offset_from_alignment",
+        match="shifting deck_cl_offset_from_alignment",
+    ):
+        p1.parse(raw)
+
+
+def test_shifting_deck_cl_super_elevated_accepted():
+    """Opposite-sign cross-slopes (super-elevation) → no crown kink, so
+    a shifting deck CL is accepted.
+    """
+    raw = _valid_raw()
+    raw["deck_cross_slope_left"] = -2.0
+    raw["deck_cross_slope_right"] = +2.0  # super-elevated
+    raw["deck_cl_offset_from_alignment"] = [
+        {"station": 1000.0, "value": 0.0},
+        {"station": 1200.0, "value": 4.0},
+    ]
+    params = p1.parse(raw)  # Must not raise
+    assert params.deck_cl_offset_from_alignment.at(1000.0) == pytest.approx(0.0)
+    assert params.deck_cl_offset_from_alignment.at(1200.0) == pytest.approx(4.0)
+
+
+def test_shifting_deck_cl_with_crown_outside_deck_accepted():
+    """Same-sign slopes but crown lies outside the deck at every bearing
+    → no kink, shifting CL accepted.
+    """
+    raw = _valid_raw()
+    # Default slopes (-2, -2) keep same-sign — but move the crown far
+    # right of the 30 ft deck at both bearings.
+    raw["crown_offset"] = 50.0
+    raw["deck_cl_offset_from_alignment"] = [
+        {"station": 1000.0, "value": 0.0},
+        {"station": 1200.0, "value": 4.0},
+    ]
+    params = p1.parse(raw)  # Must not raise
+    assert params.deck_cl_offset_from_alignment.at(1100.0) == pytest.approx(2.0)
+
+
+def test_shifting_deck_cl_into_crown_zone_rejected():
+    """Crown outside at start but deck shift moves the deck into the
+    crown zone at end → kink at end bearing → rejected.
+    """
+    raw = _valid_raw()
+    # Crown at +20 ft.  Start deck = [-15, 15] (crown outside).  Shift
+    # deck CL to +10 → end deck = [-5, 25] (crown inside).
+    raw["crown_offset"] = 20.0
+    raw["deck_cl_offset_from_alignment"] = [
+        {"station": 1000.0, "value": 0.0},
+        {"station": 1200.0, "value": 10.0},
+    ]
+    with pytest.raises(
+        p1.Phase1ParamsError,
+        match="shifting deck_cl_offset_from_alignment",
     ):
         p1.parse(raw)
 

@@ -45,6 +45,7 @@ import json
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+import deck_geometry as dg
 import station_profile as sp
 
 
@@ -205,24 +206,17 @@ def parse(raw: dict) -> Phase1Params:
         raw["deck_cl_offset_from_alignment"], begin, end,
         "deck_cl_offset_from_alignment",
     )
-    # Phase-1 capability gate: deck solid construction is a constant
-    # cross-section sweep, so station-varying crown_offset or
-    # deck_cl_offset_from_alignment would not be honored by the slab
-    # geometry (only by the reference polylines). Reject explicitly so
-    # users don't silently get a deck that ignores their input. Lifting
-    # this gate is tracked in docs/phase2-scope.md.
+    # Phase-1 capability gate: the deck solid is built by sweeping a
+    # constant cross-section. station-varying crown_offset would change
+    # the cross-section shape along the bridge — not supported.
+    # Shifting deck_cl_offset_from_alignment is allowed IFF the deck
+    # cross-section has no crown kink at any bearing (deferred check
+    # below — requires parsed supports/superstructures to know widths).
     if not crown_profile.is_effectively_constant():
         raise Phase1ParamsError(
             "station-varying crown_offset is not yet supported by the deck "
             "solid (constant-section sweep); collapse to a single value "
             "until station-varying cross-section lands in Phase 2+"
-        )
-    if not deck_cl_profile.is_effectively_constant():
-        raise Phase1ParamsError(
-            "station-varying deck_cl_offset_from_alignment is not yet "
-            "supported by the deck solid (constant-section sweep); "
-            "collapse to a single value until station-varying cross-section "
-            "lands in Phase 2+"
         )
 
     supports = tuple(_parse_support(s, i) for i, s in enumerate(raw["supports"]))
@@ -248,6 +242,18 @@ def parse(raw: dict) -> Phase1Params:
 
     _validate_span_support_refs(spans, supports)
     _validate_supports_in_range(supports, begin, end)
+
+    cross_slope_left = float(raw["deck_cross_slope_left"])
+    cross_slope_right = float(raw["deck_cross_slope_right"])
+    _validate_shifting_dcl_has_no_crown_kink(
+        deck_cl_profile=deck_cl_profile,
+        crown_profile=crown_profile,
+        cross_slope_left=cross_slope_left,
+        cross_slope_right=cross_slope_right,
+        supports=supports,
+        spans=spans,
+        superstructures=superstructures,
+    )
 
     return Phase1Params(
         alignment_name=str(raw["alignment_name"]),
@@ -522,6 +528,79 @@ def _validate_supports_in_range(supports, begin: float, end: float) -> None:
             raise Phase1ParamsError(
                 f"Support {s.support_id} station {s.station} outside bridge range "
                 f"[{begin}, {end}]"
+            )
+
+
+def _validate_shifting_dcl_has_no_crown_kink(
+    *,
+    deck_cl_profile: sp.StationProfile,
+    crown_profile: sp.StationProfile,
+    cross_slope_left: float,
+    cross_slope_right: float,
+    supports: Tuple,
+    spans: Tuple,
+    superstructures: Tuple,
+) -> None:
+    """When deck CL shifts along the bridge, require no crown kink at any
+    bearing.
+
+    The deck solid is built via a constant cross-section sweep boolean-
+    intersected with the trim polygon.  A laterally-shifting deck CL is
+    accommodated by widening the fat-deck cross-section and letting the
+    trim polygon cut the correct footprint — but ONLY if the cross-
+    section has no crown vertex (i.e., it's a 4-corner parallelogram
+    rather than a 6-vertex hexagon).  A hexagonal section would need a
+    different crown position at each bearing, which a constant-section
+    sweep can't deliver.
+
+    "No crown kink" means either: (a) the crown is outside the deck at
+    every bearing, or (b) the cross-slopes have opposite signs
+    (super-elevated) — both make the cross-section a parallelogram.
+    """
+    if deck_cl_profile.is_effectively_constant():
+        return  # No shift — unchanged behavior
+
+    # Per-bearing kink check.  Iterate each (span, side) pair so each
+    # bearing's actual width is used.
+    supports_by_id = {s.support_id: s for s in supports}
+    bearings_with_widths: List[Tuple[str, float, float]] = []  # (label, station, perp_width)
+    for span, super_ in zip(spans, superstructures):
+        start_sup = supports_by_id[span.start_support_id]
+        end_sup = supports_by_id[span.end_support_id]
+        bearings_with_widths.append((
+            f"{span.span_id}.start ({start_sup.support_id})",
+            start_sup.station,
+            super_.perpendicular_deck_width_start,
+        ))
+        bearings_with_widths.append((
+            f"{span.span_id}.end ({end_sup.support_id})",
+            end_sup.station,
+            super_.perpendicular_deck_width_end,
+        ))
+
+    for label, station, perp_width in bearings_with_widths:
+        dcl = deck_cl_profile.at(station)
+        crown = crown_profile.at(station)
+        left_perp = dcl - perp_width / 2.0
+        right_perp = dcl + perp_width / 2.0
+
+        if dg.crown_kink_present(
+            slope_left_pct=cross_slope_left,
+            slope_right_pct=cross_slope_right,
+            deck_left_perp=left_perp,
+            deck_right_perp=right_perp,
+            crown_perp=crown,
+        ):
+            raise Phase1ParamsError(
+                f"shifting deck_cl_offset_from_alignment is only supported "
+                f"when the deck cross-section has no crown kink at any bearing; "
+                f"bearing {label} at station {station} has a crown straddle "
+                f"(crown_perp={crown}, deck=[{left_perp}, {right_perp}]) with "
+                f"same-sign cross-slopes ({cross_slope_left}, {cross_slope_right}). "
+                f"To use a shifting deck CL, either: (a) shift the deck so the "
+                f"crown stays outside [left, right] at every bearing, or (b) use "
+                f"opposite-sign cross-slopes (super-elevation), or (c) keep "
+                f"deck_cl_offset_from_alignment constant."
             )
 
 

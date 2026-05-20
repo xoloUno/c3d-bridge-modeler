@@ -42,6 +42,7 @@ import alignment as al
 
 SAMPLE_LINE_GROUP_NAME = "BRIDGE-SUPPORTS"
 DEFAULT_OVERHANG_FT = 1.0  # extra length past each deck edge for visibility
+BEARING_SUFFIX = ".BRG"  # appended to support_id for bearing-line sample lines
 
 
 class SkeletonError(RuntimeError):
@@ -89,10 +90,6 @@ def ensure_support_sample_lines(
     created = []
     preserved = []
     for support in supports:
-        if support.support_id in existing_names:
-            preserved.append((support.support_id, existing_names[support.support_id]))
-            continue
-
         deck_width = deck_widths_by_support_id.get(support.support_id)
         if deck_width is None:
             raise SkeletonError(
@@ -100,22 +97,86 @@ def ensure_support_sample_lines(
             )
         deck_cl_offset = deck_cl_offsets_by_support_id.get(support.support_id, 0.0)
 
-        endpoints = _skewed_endpoints(
+        # Support sample line at support.station
+        _ensure_one_sample_line(
+            tr=tr,
             alignment_obj=alignment_obj,
+            group_id=group_id,
+            existing_names=existing_names,
+            name=support.support_id,
             station=support.station,
             skew_deg=support.skew_angle,
             deck_width_along_bearing=deck_width,
             deck_cl_offset=deck_cl_offset,
             overhang_ft=overhang_ft,
+            created=created,
+            preserved=preserved,
         )
-        points = Point2dCollection()
-        for x, y in endpoints:
-            points.Add(Point2d(x, y))
 
-        sl_id = SampleLine.Create(support.support_id, group_id, points)
-        created.append((support.support_id, sl_id))
+        # Bearing-line sample lines at support.station + each bearing_offset
+        bearing_offsets = tuple(support.bearing_offsets)
+        for i, brg_offset in enumerate(bearing_offsets):
+            if abs(brg_offset) < 1e-9:
+                # Coincides with support station — would duplicate the
+                # support sample line; skip.
+                continue
+            brg_name = (
+                f"{support.support_id}{BEARING_SUFFIX}"
+                if len(bearing_offsets) == 1
+                else f"{support.support_id}{BEARING_SUFFIX}.{i}"
+            )
+            _ensure_one_sample_line(
+                tr=tr,
+                alignment_obj=alignment_obj,
+                group_id=group_id,
+                existing_names=existing_names,
+                name=brg_name,
+                station=support.station + brg_offset,
+                skew_deg=support.skew_angle,
+                deck_width_along_bearing=deck_width,
+                deck_cl_offset=deck_cl_offset,
+                overhang_ft=overhang_ft,
+                created=created,
+                preserved=preserved,
+            )
 
     return {"group_id": group_id, "created": created, "preserved": preserved}
+
+
+def _ensure_one_sample_line(
+    *,
+    tr,
+    alignment_obj,
+    group_id,
+    existing_names,
+    name: str,
+    station: float,
+    skew_deg: float,
+    deck_width_along_bearing: float,
+    deck_cl_offset: float,
+    overhang_ft: float,
+    created: list,
+    preserved: list,
+) -> None:
+    """Create one sample line if absent; preserve if already present."""
+    if name in existing_names:
+        preserved.append((name, existing_names[name]))
+        return
+
+    endpoints = _skewed_endpoints(
+        alignment_obj=alignment_obj,
+        station=station,
+        skew_deg=skew_deg,
+        deck_width_along_bearing=deck_width_along_bearing,
+        deck_cl_offset=deck_cl_offset,
+        overhang_ft=overhang_ft,
+    )
+    points = Point2dCollection()
+    for x, y in endpoints:
+        points.Add(Point2d(x, y))
+
+    sl_id = SampleLine.Create(name, group_id, points)
+    created.append((name, sl_id))
 
 
 def _find_group_by_name(tr, alignment_obj, group_name: str):
