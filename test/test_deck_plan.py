@@ -891,6 +891,102 @@ def test_tapering_viaduct_three_segments_all_transitions_linear():
 
 
 # -----------------------------------------------------------------------
+# Skewed-corner bulge correctness (regression test)
+# -----------------------------------------------------------------------
+
+def test_skewed_corners_curved_tapering_midstation_width():
+    """When the polygon caller passes skewed bearing corners as
+    start_xy/end_xy, the resulting arc must still pass through the
+    alignment-perpendicular midpoint sample. Verified by checking that
+    the perpendicular distance from the alignment to the polygon's
+    arc at midstation matches the linearly-interpolated mid offset.
+
+    Regression: previously the bulges were computed using un-skewed
+    alignment-perpendicular endpoints but applied to the polyline's
+    actual (skewed) corner vertices, producing an arc that didn't pass
+    through the midpoint sample.
+    """
+    R = 500.0
+    bridge_start = 0.0
+    bridge_end = R * math.radians(15.0)  # ~131 ft, 15° of curve
+
+    pt_fn = _curved_alignment_point(R)
+    dir_fn = _curved_alignment_direction(R)
+
+    # Skew the bearings (matching the user's params)
+    start_skew = 10.0
+    end_skew = -10.0
+
+    def brg_fn(station, skew_deg, perp_offset):
+        # Build a skewed-bearing point analogous to alignment.point_on_skewed_bearing
+        if skew_deg == 0.0:
+            return pt_fn(station, perp_offset)
+        cx, cy = pt_fn(station, 0.0)
+        alignment_dir = dir_fn(station)
+        skew_rad = math.radians(skew_deg)
+        perp_left_dir = alignment_dir + math.pi / 2.0 + skew_rad
+        L = -perp_offset / math.cos(skew_rad)
+        return (cx + L * math.cos(perp_left_dir), cy + L * math.sin(perp_left_dir))
+
+    segments = [dp.AlignmentSegment(dp.ENTITY_ARC, bridge_start, bridge_end, radius=R)]
+
+    poly = dp.derive_deck_plan_polygon(
+        segments=segments,
+        bridge_start_station=bridge_start,
+        bridge_end_station=bridge_end,
+        start_left_offset=-11.0,
+        start_right_offset=+11.0,
+        end_left_offset=-12.5,
+        end_right_offset=+12.5,
+        start_skew_deg=start_skew,
+        end_skew_deg=end_skew,
+        point_at_station_offset=pt_fn,
+        direction_at_station=dir_fn,
+        point_on_skewed_bearing=brg_fn,
+    )
+    assert len(poly) == 4  # CCW: start_left, start_right, end_right, end_left
+
+    # Right-edge arc lives between poly[1] (start_right) and poly[2] (end_right)
+    p_start = (poly[1].x, poly[1].y)
+    p_end = (poly[2].x, poly[2].y)
+    bulge = poly[1].bulge
+
+    # Reconstruct the arc geometry from chord + bulge
+    chord_dx = p_end[0] - p_start[0]
+    chord_dy = p_end[1] - p_start[1]
+    chord_len = math.hypot(chord_dx, chord_dy)
+    assert chord_len > 1.0
+
+    included = 4.0 * math.atan(bulge)
+    # Arc center is perpendicular to chord midpoint, offset by R*cos(included/2)
+    chord_mx = 0.5 * (p_start[0] + p_end[0])
+    chord_my = 0.5 * (p_start[1] + p_end[1])
+    R_arc = abs(chord_len / (2.0 * math.sin(included / 2.0)))
+
+    # Perpendicular to chord, oriented to match arc bow direction
+    perp_x = -chord_dy / chord_len
+    perp_y = chord_dx / chord_len
+    if included < 0:
+        perp_x, perp_y = -perp_x, -perp_y
+    d_to_center = R_arc * math.cos(abs(included) / 2.0)
+    cx = chord_mx + d_to_center * perp_x
+    cy = chord_my + d_to_center * perp_y
+
+    # The 3-point fit's midpoint sample: alignment at midstation, +11.75 offset
+    mid_sta = 0.5 * (bridge_start + bridge_end)
+    mid_off = 0.5 * (11.0 + 12.5)
+    mid_expected = pt_fn(mid_sta, mid_off)
+
+    # The midpoint sample should lie on the arc — distance from arc center
+    # equals R_arc.
+    mid_radius = math.hypot(mid_expected[0] - cx, mid_expected[1] - cy)
+    assert mid_radius == pytest.approx(R_arc, rel=1e-3), (
+        f"midpoint sample ({mid_expected}) not on arc: "
+        f"distance to center = {mid_radius}, R_arc = {R_arc}"
+    )
+
+
+# -----------------------------------------------------------------------
 # Regression: zero-length span should not crash
 # -----------------------------------------------------------------------
 

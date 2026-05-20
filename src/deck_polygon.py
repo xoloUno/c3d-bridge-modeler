@@ -59,7 +59,7 @@ XDATA_NAME = "DECK-PLAN"  # value stored under XDATA_KEY for find-or-create
 # a way that invalidates previously-created polygons; the next run
 # erases stale ones and regenerates them.
 _SCHEMA_VERSION_KEY = "schema_version"
-_SCHEMA_VERSION = "v2-subentity-classification"
+_SCHEMA_VERSION = "v3-skewed-corner-bulges"
 
 
 class DeckPolygonError(RuntimeError):

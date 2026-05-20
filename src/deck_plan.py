@@ -324,6 +324,8 @@ def derive_edge_vertices(
     offset_end: float,
     point_at_station_offset: "Callable[[float, float], Point2D]",
     direction_at_station: "Callable[[float], float]",
+    start_xy: Optional[Point2D] = None,
+    end_xy: Optional[Point2D] = None,
 ) -> List[PlanVertex]:
     """Derive vertices for one edge of the deck (left or right).
 
@@ -350,24 +352,39 @@ def derive_edge_vertices(
     |                                       | alignment (small kinks OK)    |
     +---------------------------------------+-------------------------------+
 
+    ``start_xy`` / ``end_xy`` override the first / last vertex
+    positions (and are used as the arc-fit endpoints). The polygon
+    caller passes the actual skewed bearing-corner XY here so the
+    computed bulge corresponds to the chord that the polyline will
+    actually draw between. When ``None``, the endpoints come from
+    ``point_at_station_offset(bridge_start_or_end, offset_start_or_end)``
+    — equivalent to assuming zero skew.
+
     Returns vertices in bridge_start → bridge_end order.  The last
     vertex's ``bulge`` is 0 — there is no "next" edge segment in this
     edge's scope.  The polygon caller sets the closing/bearing-line
     bulge.
     """
+    if start_xy is None:
+        start_xy = point_at_station_offset(bridge_start_station, offset_start)
+    if end_xy is None:
+        end_xy = point_at_station_offset(bridge_end_station, offset_end)
+
     clipped = _clip_segments(segments, bridge_start_station, bridge_end_station)
 
     # Pure fallback: no segment info at all.
     if not clipped:
-        x0, y0 = point_at_station_offset(bridge_start_station, offset_start)
-        x1, y1 = point_at_station_offset(bridge_end_station, offset_end)
-        return [PlanVertex(x0, y0, 0.0), PlanVertex(x1, y1, 0.0)]
+        return [
+            PlanVertex(start_xy[0], start_xy[1], 0.0),
+            PlanVertex(end_xy[0], end_xy[1], 0.0),
+        ]
 
     # --- Gate 1: constant offset (no taper) ---
     if is_constant_offset(offset_start, offset_end):
         return _edge_constant_offset(
             clipped, offset_start,
             point_at_station_offset, direction_at_station,
+            start_xy=start_xy, end_xy=end_xy,
         )
 
     # --- Gate 2: tapering, dispatch on segment configuration ---
@@ -376,14 +393,12 @@ def derive_edge_vertices(
     if n_segs == 1:
         seg = clipped[0]
         if seg.entity_type in (ENTITY_TANGENT, ENTITY_SPIRAL):
-            return _edge_tapering_linear(
-                bridge_start_station, bridge_end_station,
-                offset_start, offset_end, point_at_station_offset,
-            )
+            return _edge_tapering_linear(start_xy, end_xy)
         # ARC: wholly within a curve, use 3-point arc fit
         return _edge_tapering_within_curve_3point(
             bridge_start_station, bridge_end_station,
             offset_start, offset_end, point_at_station_offset,
+            start_xy=start_xy, end_xy=end_xy,
         )
 
     if n_segs == 2:
@@ -395,12 +410,14 @@ def derive_edge_vertices(
             return _edge_tapering_single_transition_forward(
                 clipped, bridge_start_station, bridge_end_station,
                 offset_start, offset_end, point_at_station_offset,
+                start_xy=start_xy, end_xy=end_xy,
             )
         if b_is_straight and not a_is_straight:
             # curve → tangent/spiral: walk backward from the trailing tangent
             return _edge_tapering_single_transition_backward(
                 clipped, bridge_start_station, bridge_end_station,
                 offset_start, offset_end, point_at_station_offset,
+                start_xy=start_xy, end_xy=end_xy,
             )
         # Two straight or two curve segments: fall through to viaduct logic
         # (kinks accepted at the transition).
@@ -412,6 +429,7 @@ def derive_edge_vertices(
         clipped, bridge_start_station, bridge_end_station,
         offset_start, offset_end,
         point_at_station_offset, direction_at_station,
+        start_xy=start_xy, end_xy=end_xy,
     )
 
 
@@ -424,16 +442,36 @@ def _edge_constant_offset(
     offset: float,
     point_at_station_offset: "Callable[[float, float], Point2D]",
     direction_at_station: "Callable[[float], float]",
+    *,
+    start_xy: Point2D,
+    end_xy: Point2D,
 ) -> List[PlanVertex]:
     """Pure offset from alignment geometry.  Each alignment segment
     contributes its natural shape:
     - TANGENT / SPIRAL → straight (bulge 0; spiral approximated as line)
     - ARC → concentric arc, tangent-constrained to alignment direction
+
+    ``start_xy`` / ``end_xy`` override the first / last vertex positions
+    (typically the skewed bearing corners). For ARC segments at the
+    ends, the bulge is recomputed using ``start_xy`` / ``end_xy`` as
+    the chord endpoint so the polyline arc matches the actual chord.
     """
     vertices: List[PlanVertex] = []
-    for seg in segments:
-        x0, y0 = point_at_station_offset(seg.start_station, offset)
-        x1, y1 = point_at_station_offset(seg.end_station, offset)
+    n_segs = len(segments)
+    for i, seg in enumerate(segments):
+        is_first = i == 0
+        is_last = i == n_segs - 1
+
+        # Pin the first/last vertex positions to start_xy/end_xy; other
+        # boundary samples come from the alignment query.
+        if is_first:
+            x0, y0 = start_xy
+        else:
+            x0, y0 = point_at_station_offset(seg.start_station, offset)
+        if is_last:
+            x1, y1 = end_xy
+        else:
+            x1, y1 = point_at_station_offset(seg.end_station, offset)
 
         if not vertices:
             vertices.append(PlanVertex(x0, y0, 0.0))
@@ -453,17 +491,12 @@ def _edge_constant_offset(
     return vertices
 
 
-def _edge_tapering_linear(
-    bridge_start: float,
-    bridge_end: float,
-    offset_start: float,
-    offset_end: float,
-    point_at_station_offset: "Callable[[float, float], Point2D]",
-) -> List[PlanVertex]:
+def _edge_tapering_linear(start_xy: Point2D, end_xy: Point2D) -> List[PlanVertex]:
     """Linear-in-station taper — single straight segment from start to end."""
-    x0, y0 = point_at_station_offset(bridge_start, offset_start)
-    x1, y1 = point_at_station_offset(bridge_end, offset_end)
-    return [PlanVertex(x0, y0, 0.0), PlanVertex(x1, y1, 0.0)]
+    return [
+        PlanVertex(start_xy[0], start_xy[1], 0.0),
+        PlanVertex(end_xy[0], end_xy[1], 0.0),
+    ]
 
 
 def _edge_tapering_within_curve_3point(
@@ -472,24 +505,28 @@ def _edge_tapering_within_curve_3point(
     offset_start: float,
     offset_end: float,
     point_at_station_offset: "Callable[[float, float], Point2D]",
+    *,
+    start_xy: Point2D,
+    end_xy: Point2D,
 ) -> List[PlanVertex]:
-    """Tapering width wholly on one arc segment: fit through 3 points
-    sampled from the ideal varying-offset curve at start, midstation,
-    and end.  No tangent constraint from outside the bridge.
+    """Tapering width wholly on one arc segment: fit through 3 points.
+
+    Endpoints (start, end) are taken from ``start_xy`` / ``end_xy``
+    (typically the skewed bearing corners — the polyline's actual
+    vertices). The mid-sample comes from the alignment at midstation
+    with the linearly-interpolated mid-offset. This ensures the bulge
+    is correct for the chord the polyline will actually draw.
     """
     s_mid = 0.5 * (bridge_start + bridge_end)
     off_mid = 0.5 * (offset_start + offset_end)
-
-    p0 = point_at_station_offset(bridge_start, offset_start)
     p_mid = point_at_station_offset(s_mid, off_mid)
-    p1 = point_at_station_offset(bridge_end, offset_end)
 
-    arc = arc_through_three_points(p0, p_mid, p1)
+    arc = arc_through_three_points(start_xy, p_mid, end_xy)
     bulge = arc.bulge if arc is not None else 0.0
 
     return [
-        PlanVertex(p0[0], p0[1], bulge),
-        PlanVertex(p1[0], p1[1], 0.0),
+        PlanVertex(start_xy[0], start_xy[1], bulge),
+        PlanVertex(end_xy[0], end_xy[1], 0.0),
     ]
 
 
@@ -500,15 +537,17 @@ def _edge_tapering_single_transition_forward(
     offset_start: float,
     offset_end: float,
     point_at_station_offset: "Callable[[float, float], Point2D]",
+    *,
+    start_xy: Point2D,
+    end_xy: Point2D,
 ) -> List[PlanVertex]:
     """tangent/spiral → curve, walking forward.
 
-    The tangent segment is a straight line whose direction comes from
-    its two endpoints (linearly interpolated offsets).  The curve
-    segment is an arc tangent-constrained to that direction — NOT to
-    the alignment's tangent at the transition station.  For tapering
-    cases the two differ by the taper angle, and using the alignment
-    tangent introduces a small kink at the transition.
+    The tangent segment is a straight line from ``start_xy`` to the
+    transition point. Its direction is determined by these two endpoints
+    (NOT the alignment tangent — for tapering the two differ). The
+    curve segment is an arc tangent-constrained to that direction at
+    the transition, ending at ``end_xy``.
     """
     tan_seg, arc_seg = segments
 
@@ -516,20 +555,19 @@ def _edge_tapering_single_transition_forward(
         tan_seg.end_station, bridge_start, bridge_end,
         offset_start, offset_end,
     )
-    p0 = point_at_station_offset(bridge_start, offset_start)
+    p0 = start_xy
     p_trans = point_at_station_offset(tan_seg.end_station, off_at_transition)
-    p1 = point_at_station_offset(bridge_end, offset_end)
+    p1 = end_xy
 
-    # Tangent direction at the transition = direction of the straight edge
-    # segment (NOT the alignment's tangent direction).
+    # Direction of the tangent edge segment (skewed-corner-aware).
     edge_dir = math.atan2(p_trans[1] - p0[1], p_trans[0] - p0[0])
 
     arc = arc_from_start_tangent_endpoint(p_trans, edge_dir, p1)
     arc_bulge = arc.bulge if arc is not None else 0.0
 
     return [
-        PlanVertex(p0[0], p0[1], 0.0),         # tangent: straight to transition
-        PlanVertex(p_trans[0], p_trans[1], arc_bulge),  # arc to end
+        PlanVertex(p0[0], p0[1], 0.0),
+        PlanVertex(p_trans[0], p_trans[1], arc_bulge),
         PlanVertex(p1[0], p1[1], 0.0),
     ]
 
@@ -541,12 +579,15 @@ def _edge_tapering_single_transition_backward(
     offset_start: float,
     offset_end: float,
     point_at_station_offset: "Callable[[float, float], Point2D]",
+    *,
+    start_xy: Point2D,
+    end_xy: Point2D,
 ) -> List[PlanVertex]:
     """curve → tangent/spiral, walking backward from the trailing tangent.
 
-    The trailing tangent segment's direction is determined by its
-    endpoints.  The leading curve is fit as an arc whose tangent at the
-    transition matches the trailing tangent's direction (going forward).
+    The trailing tangent's forward direction is determined by the
+    transition point and ``end_xy``. The leading curve is fit as an
+    arc whose forward tangent at the transition matches that direction.
     """
     arc_seg, tan_seg = segments
 
@@ -554,24 +595,21 @@ def _edge_tapering_single_transition_backward(
         tan_seg.start_station, bridge_start, bridge_end,
         offset_start, offset_end,
     )
-    p0 = point_at_station_offset(bridge_start, offset_start)
+    p0 = start_xy
     p_trans = point_at_station_offset(tan_seg.start_station, off_at_transition)
-    p1 = point_at_station_offset(bridge_end, offset_end)
+    p1 = end_xy
 
-    # Trailing tangent's forward direction.
     edge_dir_fwd = math.atan2(p1[1] - p_trans[1], p1[0] - p_trans[0])
 
-    # Fit the curve by traversing it backward (from transition to bridge_start).
-    # Going backward at the transition, the tangent direction is opposite.
+    # Fit backward (p_trans → p0); reversing flips the bulge sign.
     arc_backward = arc_from_start_tangent_endpoint(
         p_trans, edge_dir_fwd + math.pi, p0,
     )
-    # Reversing traversal direction flips the bulge sign.
     arc_bulge_fwd = -arc_backward.bulge if arc_backward is not None else 0.0
 
     return [
-        PlanVertex(p0[0], p0[1], arc_bulge_fwd),  # arc to transition
-        PlanVertex(p_trans[0], p_trans[1], 0.0),  # tangent: straight to end
+        PlanVertex(p0[0], p0[1], arc_bulge_fwd),
+        PlanVertex(p_trans[0], p_trans[1], 0.0),
         PlanVertex(p1[0], p1[1], 0.0),
     ]
 
@@ -584,15 +622,26 @@ def _edge_tapering_viaduct(
     offset_end: float,
     point_at_station_offset: "Callable[[float, float], Point2D]",
     direction_at_station: "Callable[[float], float]",
+    *,
+    start_xy: Point2D,
+    end_xy: Point2D,
 ) -> List[PlanVertex]:
     """Multi-transition (viaduct) tapering.  Vertices placed at every
     segment boundary at linearly-interpolated offsets.  ARC segments
     get arcs tangent to the alignment direction at their start (NOT
     tangent to the preceding edge segment).  Small kinks accepted at
     transitions.
+
+    First and last vertices are pinned to ``start_xy`` / ``end_xy``;
+    arc bulges on the first / last ARC segment are recomputed against
+    these endpoints so the polyline arc shape matches the chord.
     """
     vertices: List[PlanVertex] = []
-    for seg in segments:
+    n_segs = len(segments)
+    for i, seg in enumerate(segments):
+        is_first = i == 0
+        is_last = i == n_segs - 1
+
         off_seg_start = _interp_offset(
             seg.start_station, bridge_start, bridge_end,
             offset_start, offset_end,
@@ -601,8 +650,15 @@ def _edge_tapering_viaduct(
             seg.end_station, bridge_start, bridge_end,
             offset_start, offset_end,
         )
-        x0, y0 = point_at_station_offset(seg.start_station, off_seg_start)
-        x1, y1 = point_at_station_offset(seg.end_station, off_seg_end)
+
+        if is_first:
+            x0, y0 = start_xy
+        else:
+            x0, y0 = point_at_station_offset(seg.start_station, off_seg_start)
+        if is_last:
+            x1, y1 = end_xy
+        else:
+            x1, y1 = point_at_station_offset(seg.end_station, off_seg_end)
 
         if not vertices:
             vertices.append(PlanVertex(x0, y0, 0.0))
@@ -687,6 +743,11 @@ def derive_deck_plan_polygon(
     )
 
     # ---- 2. Right edge: start_right → end_right (ahead-station) ----
+    # Pass the skewed bearing corners as start_xy/end_xy so the arc
+    # bulges are computed for the chord that the polyline will actually
+    # draw — for skewed supports the skewed corners differ from the
+    # alignment-perpendicular crossings, and using the un-skewed chord
+    # gives wrong arc shapes (verified by midstation width measurement).
     right_edge = derive_edge_vertices(
         segments=segments,
         bridge_start_station=bridge_start_station,
@@ -695,6 +756,8 @@ def derive_deck_plan_polygon(
         offset_end=end_right_offset,
         point_at_station_offset=point_at_station_offset,
         direction_at_station=direction_at_station,
+        start_xy=start_right_xy,
+        end_xy=end_right_xy,
     )
 
     # ---- 3. Left edge: start_left → end_left (ahead-station) ----
@@ -706,6 +769,8 @@ def derive_deck_plan_polygon(
         offset_end=end_left_offset,
         point_at_station_offset=point_at_station_offset,
         direction_at_station=direction_at_station,
+        start_xy=start_left_xy,
+        end_xy=end_left_xy,
     )
 
     # ---- 4. Assemble polygon (CCW) ----
