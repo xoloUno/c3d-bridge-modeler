@@ -1,4 +1,4 @@
-"""bridge_lines.py module v5 — dense edge-polyline sampling for curves.
+"""bridge_lines.py module v6 — arc-segment edge polylines for DIMRADIUS.
 
 Bridge reference-line creation in Civil 3D.
 
@@ -72,7 +72,7 @@ XDATA_KEY = "bridge_line"
 # edits to a polyline whose schema_version matches the current code
 # are still preserved via the find-or-create path.
 _SCHEMA_VERSION_KEY = "schema_version"
-_SCHEMA_VERSION = "v5-curved-edge"
+_SCHEMA_VERSION = "v6-arc-edge"
 
 # Reference-line names. Phase 1 = single bridge per drawing; multi-bridge
 # namespacing is an open question (scope.md "Open Questions").
@@ -99,7 +99,7 @@ def ensure_phase1_bridge_lines(
     names exists in the drawing, this function leaves it alone (matching
     the two-mode workflow).
     """
-    print("[bridge_lines] entering ensure_phase1_bridge_lines (v5)")
+    print("[bridge_lines] entering ensure_phase1_bridge_lines (v6)")
     # Use the original-signature ensure_layer (color only) so we don't
     # depend on a fresh layers.py reload — empirically OneDrive + Python's
     # __pycache__ can leave stale .pyc files even after a clean git pull.
@@ -117,34 +117,60 @@ def ensure_phase1_bridge_lines(
     width_at = _width_at_station_fn(compute_result)
     deck_cl_at = params.deck_cl_offset_from_alignment.at
 
+    left_offset_fn = lambda sta: deck_cl_at(sta) - width_at(sta) / 2.0
+    right_offset_fn = lambda sta: deck_cl_at(sta) + width_at(sta) / 2.0
+
     left_pts = [
         al.point_on_skewed_bearing(
-            alignment_obj, sta, skew, deck_cl_at(sta) - width_at(sta) / 2.0
+            alignment_obj, sta, skew, left_offset_fn(sta)
         )
         for sta, skew in vertex_specs
     ]
     right_pts = [
         al.point_on_skewed_bearing(
-            alignment_obj, sta, skew, deck_cl_at(sta) + width_at(sta) / 2.0
+            alignment_obj, sta, skew, right_offset_fn(sta)
         )
         for sta, skew in vertex_specs
     ]
+
+    # Arc bulges so DIMRADIUS works on curved alignments.  On straight
+    # alignments every midpoint is collinear → bulge = 0 → straight
+    # segments, identical to previous behaviour.
+    left_bulges = _compute_arc_bulges(
+        alignment_obj, vertex_specs, left_pts, left_offset_fn
+    )
+    right_bulges = _compute_arc_bulges(
+        alignment_obj, vertex_specs, right_pts, right_offset_fn
+    )
 
     created: List[Tuple[str, object]] = []
     preserved: List[Tuple[str, object]] = []
     regenerated: List[Tuple[str, object, object]] = []
 
-    _ensure_polyline(tr, db, NAME_EDGE_LEFT, left_pts, created, preserved, regenerated)
-    _ensure_polyline(tr, db, NAME_EDGE_RIGHT, right_pts, created, preserved, regenerated)
+    _ensure_polyline(
+        tr, db, NAME_EDGE_LEFT, left_pts, left_bulges,
+        created, preserved, regenerated,
+    )
+    _ensure_polyline(
+        tr, db, NAME_EDGE_RIGHT, right_pts, right_bulges,
+        created, preserved, regenerated,
+    )
 
     if not params.deck_cl_offset_from_alignment.is_effectively_constant_zero():
         # Bridge CL is along the alignment direction at deck CL (no skew —
         # it's a longitudinal line, not a bearing line).
+        cl_offset_fn = lambda sta: deck_cl_at(sta)
         cl_pts = [
-            al.point_on_skewed_bearing(alignment_obj, sta, skew, deck_cl_at(sta))
+            al.point_on_skewed_bearing(alignment_obj, sta, skew, cl_offset_fn(sta))
             for sta, skew in vertex_specs
         ]
-        _ensure_polyline(tr, db, NAME_BRIDGE_CL, cl_pts, created, preserved, regenerated)
+        cl_bulges = _compute_arc_bulges(
+            alignment_obj, vertex_specs, cl_pts, cl_offset_fn
+        )
+        _ensure_polyline(
+            tr, db, NAME_BRIDGE_CL, cl_pts, cl_bulges,
+            created, preserved, regenerated,
+        )
 
     for name, _oid, stale_version in regenerated:
         print(
@@ -260,11 +286,68 @@ def _width_at_station_fn(compute_result):
     return _at
 
 
+def _compute_arc_bulges(
+    alignment_obj,
+    vertex_specs: List[Tuple[float, float]],
+    points_xy: List[Tuple[float, float]],
+    offset_fn,
+) -> List[float]:
+    """Compute polyline arc bulges so segments follow the alignment curve.
+
+    For each consecutive vertex pair, sample the alignment at the
+    mid-station with the same perpendicular offset.  The sagitta
+    (distance from chord midpoint to the true curve midpoint) divided
+    by the half-chord length equals ``tan(θ/4)`` — exactly AutoCAD's
+    bulge definition.  On straight alignments every midpoint is
+    collinear with its endpoints, so the bulge is 0.
+    """
+    bulges: List[float] = []
+    for i in range(len(vertex_specs) - 1):
+        mid_sta = (vertex_specs[i][0] + vertex_specs[i + 1][0]) / 2.0
+        mid_pt = al.point_on_skewed_bearing(
+            alignment_obj, mid_sta, 0.0, offset_fn(mid_sta)
+        )
+        bulges.append(
+            _bulge_from_three_points(points_xy[i], mid_pt, points_xy[i + 1])
+        )
+    bulges.append(0.0)  # last vertex has no outgoing segment
+    return bulges
+
+
+def _bulge_from_three_points(
+    p1: Tuple[float, float],
+    p_mid: Tuple[float, float],
+    p2: Tuple[float, float],
+) -> float:
+    """Derive the AutoCAD polyline bulge from an arc's three points.
+
+    *p1* and *p2* are the segment endpoints; *p_mid* is a point on the
+    arc near the chord midpoint (sampled at the mid-station).
+
+    AutoCAD bulge = ``tan(θ/4)`` = sagitta / half-chord.
+    Sign convention: positive when the arc bulges to the LEFT of the
+    direction p1 → p2 (counterclockwise arc).
+    """
+    chord_mx = (p1[0] + p2[0]) / 2.0
+    chord_my = (p1[1] + p2[1]) / 2.0
+    sag_x = p_mid[0] - chord_mx
+    sag_y = p_mid[1] - chord_my
+    sag = math.hypot(sag_x, sag_y)
+    half_chord = math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / 2.0
+    if half_chord < 1e-9 or sag < 1e-9:
+        return 0.0
+    bulge_mag = sag / half_chord
+    # Cross product of chord direction and sagitta gives sign.
+    cross = (p2[0] - p1[0]) * sag_y - (p2[1] - p1[1]) * sag_x
+    return bulge_mag if cross >= 0 else -bulge_mag
+
+
 def _ensure_polyline(
     tr,
     db,
     name: str,
     points_xy: List[Tuple[float, float]],
+    bulges: List[float],
     created: list,
     preserved: list,
     regenerated: list,
@@ -304,7 +387,7 @@ def _ensure_polyline(
 
     pline = Polyline()
     for i, (x, y) in enumerate(points_xy):
-        pline.AddVertexAt(i, Point2d(x, y), 0.0, 0.0, 0.0)
+        pline.AddVertexAt(i, Point2d(x, y), bulges[i], 0.0, 0.0)
     pline.Layer = NOPLOT_LAYER
 
     bt_record_id = SymbolUtilityServices.GetBlockModelSpaceId(db)
