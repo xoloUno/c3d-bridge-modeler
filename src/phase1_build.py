@@ -13,31 +13,38 @@ Pipeline:
                   phase1_compute.compute()
                                  ├─▶ skeleton.ensure_support_sample_lines()
                                  │         (BRIDGE-SUPPORTS sample line group)
-                                 ├─▶ bridge_lines.ensure_phase1_bridge_lines()
-                                 │         (BRIDGE-EDGE-L, BRIDGE-EDGE-R, and
-                                 │          BRIDGE-CL when deck CL ≠ alignment;
-                                 │          polylines on BRIDGE-NOPLOT layer)
+                                 ├─▶ deck_polygon.ensure_deck_plan_polygon()
+                                 │         (closed polyline on BRIDGE-2D-DECK,
+                                 │          single source of truth for deck
+                                 │          plan footprint; designer-editable,
+                                 │          preserved across runs)
                                  ├─▶ girders.ensure_phase1_girders()
                                  │         (steel girder swept solids on
                                  │          BRIDGE-GIRDER; regenerated each run)
                                  ├─▶ haunches.ensure_phase1_haunches()
                                  │         (haunch trapezoid swept solids on
                                  │          BRIDGE-DECK-HAUNCH; regenerated)
-                                 ├─▶ decks.ensure_phase1_decks()
-                                 │         (deck slab lofted between start
-                                 │          and end bearing-line cross-
-                                 │          sections on BRIDGE-DECK;
-                                 │          regenerated)
+                                 ├─▶ decks.ensure_phase1_decks(polygon_vertices)
+                                 │         (deck slab built by extruding the
+                                 │          BRIDGE-2D-DECK polygon, then
+                                 │          intersecting with the fat-deck
+                                 │          sweep; regenerated each run)
                                  ▼
                   format_text_report(...)
                                  ▼
                   Watch node summary string
 
-Skeleton elements (sample lines, sub-alignments, edge / CL polylines)
-are created on first run and preserved on subsequent runs — designers
-can move them between runs and the tool reads positions back. Solid
-geometry (girders so far; deck + haunches + substructure to follow) is
-regenerated from JSON each run.
+Skeleton elements (sample lines, deck plan polygon) are created on
+first run and preserved on subsequent runs — designers can grip-edit
+them between runs and the tool reads positions back. Solid geometry
+(girders, haunches, deck) is regenerated from params + the live
+skeleton each run.
+
+NOTE: `bridge_lines.ensure_phase1_bridge_lines()` (BRIDGE-NOPLOT EDGE-L,
+EDGE-R, CL polylines) is no longer called — the BRIDGE-2D-DECK polygon
+replaces all three. The `bridge_lines` module is retained in the repo
+but unused by this orchestrator. Existing BRIDGE-NOPLOT polylines in
+drawings are inert (locked layer, no longer managed).
 """
 from __future__ import annotations
 
@@ -49,7 +56,7 @@ import aisc
 import c3d_doc
 import alignment as al
 import skeleton
-import bridge_lines
+import deck_polygon
 import decks
 import girders
 import haunches
@@ -87,7 +94,7 @@ def _run(params_path: str) -> str:
         return "ERROR: AISC validation failed:\n  " + "\n  ".join(aisc_errors)
 
     skeleton_summary = ""
-    sub_alignment_summary = ""
+    polygon_summary = ""
     girder_summary = ""
     haunch_summary = ""
     deck_summary = ""
@@ -121,24 +128,26 @@ def _run(params_path: str) -> str:
             print(f"[phase1_build] {skeleton_summary}")
 
             db = c3d_doc.active_db()
-            print("[phase1_build] ensuring edge-of-deck and bridge-CL polylines")
-            bl = bridge_lines.ensure_phase1_bridge_lines(
+            print("[phase1_build] ensuring deck plan polygon (BRIDGE-2D-DECK)")
+            dp_res = deck_polygon.ensure_deck_plan_polygon(
                 tr=tr,
                 db=db,
                 alignment_obj=alignment_obj,
                 params=params,
                 compute_result=result,
             )
-            regen_names = [name for name, _oid, _ver in bl.get("regenerated", [])]
-            sub_alignment_summary = (
-                f"Bridge lines: created {len(bl['created'])} "
-                f"({', '.join(name for name, _ in bl['created']) or '—'}), "
-                f"preserved {len(bl['preserved'])} "
-                f"({', '.join(name for name, _ in bl['preserved']) or '—'}), "
-                f"regenerated {len(regen_names)} "
-                f"({', '.join(regen_names) or '—'})"
+            polygon_vertices = dp_res["vertices"]
+            dp_regen_names = [name for name, _oid, _ver in dp_res.get("regenerated", [])]
+            polygon_summary = (
+                f"Deck polygon: created {len(dp_res['created'])} "
+                f"({', '.join(name for name, _ in dp_res['created']) or '—'}), "
+                f"preserved {len(dp_res['preserved'])} "
+                f"({', '.join(name for name, _ in dp_res['preserved']) or '—'}), "
+                f"regenerated {len(dp_regen_names)} "
+                f"({', '.join(dp_regen_names) or '—'}), "
+                f"vertices={len(polygon_vertices)}"
             )
-            print(f"[phase1_build] {sub_alignment_summary}")
+            print(f"[phase1_build] {polygon_summary}")
 
             print("[phase1_build] regenerating girder solids")
             gd = girders.ensure_phase1_girders(
@@ -173,7 +182,7 @@ def _run(params_path: str) -> str:
             )
             print(f"[phase1_build] {haunch_summary}")
 
-            print("[phase1_build] regenerating deck slabs")
+            print("[phase1_build] regenerating deck slabs (from polygon)")
             dk = decks.ensure_phase1_decks(
                 tr=tr,
                 db=db,
@@ -182,6 +191,7 @@ def _run(params_path: str) -> str:
                 compute_result=result,
                 aisc_table=aisc_table,
                 profile_elevation_at=profile_at,
+                polygon_vertices=polygon_vertices,
             )
             deck_summary = (
                 f"Decks: built {len(dk['created'])} "
@@ -199,6 +209,6 @@ def _run(params_path: str) -> str:
     for line in report.splitlines():
         print(f"[phase1_build] {line}")
     return (
-        f"{skeleton_summary}\n{sub_alignment_summary}\n"
+        f"{skeleton_summary}\n{polygon_summary}\n"
         f"{girder_summary}\n{haunch_summary}\n{deck_summary}\n\n{report}"
     )

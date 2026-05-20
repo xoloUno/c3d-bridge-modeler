@@ -54,6 +54,8 @@ _OWN_MODULES = (
     "aisc",
     "skeleton",
     "bridge_lines",
+    "deck_polygon",
+    "deck_plan",
     "girders",
     "girder_geometry",
     "haunches",

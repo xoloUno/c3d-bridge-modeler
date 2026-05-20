@@ -136,6 +136,7 @@ def ensure_phase1_decks(
     compute_result,
     aisc_table,
     profile_elevation_at: Callable[[float], float],
+    polygon_vertices=None,
 ) -> dict:
     """Regenerate deck slab solids on `BRIDGE-DECK`.
 
@@ -146,6 +147,12 @@ def ensure_phase1_decks(
     `profile_elevation_at` must return the alignment's PGL elevation
     at any station — same callable phase1_build constructs from the
     Civil 3D profile object.
+
+    `polygon_vertices`: list of ``deck_plan.PlanVertex`` (x, y, bulge)
+    forming the deck plan polygon. The trim volume is built from this
+    polygon, preserving designer edits to the BRIDGE-2D-DECK skeleton
+    entity. When ``None``, falls back to the legacy in-decks polygon
+    derivation (kept for backward compat during transition).
     """
     print("[decks] entering ensure_phase1_decks")
     layers.ensure_layer(tr, db, LAYER_DECK, color=_COLOR_DECK)
@@ -170,6 +177,7 @@ def ensure_phase1_decks(
             start_support=start_support,
             end_support=end_support,
             profile_elevation_at=profile_elevation_at,
+            polygon_vertices=polygon_vertices,
         )
         try:
             ms_id = SymbolUtilityServices.GetBlockModelSpaceId(db)
@@ -256,6 +264,40 @@ def _purge_deck_layer(tr, db) -> int:
     return count
 
 
+def _fat_deck_envelope(*, params, span, start_support, end_support):
+    """Return ``(min_station, max_station, min_perp, max_perp)`` for sizing
+    the fat-deck sweep.
+
+    Computed directly from params + compute_result rather than back-
+    projecting polygon vertices. This makes the fat deck large enough
+    to contain the actual deck footprint, including:
+      - tapering perpendicular width (start vs end widths differ), and
+      - shifting deck_cl_offset_from_alignment (the deck shifts laterally
+        between start and end bearings).
+
+    For curved alignments the polygon's intermediate edge samples lie
+    between the start and end stations at perp offsets between the start
+    and end edge offsets, so the per-axis min/max from the two bearings
+    bounds the entire polygon.
+    """
+    bearing_start = start_support.station
+    bearing_end = end_support.station
+    min_station = min(bearing_start, bearing_end)
+    max_station = max(bearing_start, bearing_end)
+
+    dcl_start = params.deck_cl_offset_from_alignment.at(bearing_start)
+    dcl_end = params.deck_cl_offset_from_alignment.at(bearing_end)
+    w_start = span.perpendicular_deck_width_start
+    w_end = span.perpendicular_deck_width_end
+
+    left_perps = [dcl_start - w_start / 2.0, dcl_end - w_end / 2.0]
+    right_perps = [dcl_start + w_start / 2.0, dcl_end + w_end / 2.0]
+    min_perp = min(left_perps)
+    max_perp = max(right_perps)
+
+    return min_station, max_station, min_perp, max_perp
+
+
 def _build_deck_solid(
     *,
     alignment_obj,
@@ -264,25 +306,44 @@ def _build_deck_solid(
     start_support,
     end_support,
     profile_elevation_at: Callable[[float], float],
+    polygon_vertices=None,
 ):
-    """Build the final deck solid via sweep + boolean trim."""
-    # 1) Compute the deck plan polygon (many-vertex on curved
-    #    alignments; degenerates to 4-corner on straight).
-    polygon_xy, station_perp_pairs = _deck_plan_polygon_xy(
-        alignment_obj=alignment_obj,
+    """Build the final deck solid via sweep + boolean trim.
+
+    When ``polygon_vertices`` is provided (list of ``deck_plan.PlanVertex``),
+    the trim volume is built from those vertices+bulges — the
+    BRIDGE-2D-DECK skeleton entity drives the deck shape. Otherwise the
+    legacy in-decks polygon derivation runs (backward-compat).
+    """
+    # 1) Get the polygon vertices.
+    if polygon_vertices is not None:
+        polygon_corners = [(v.x, v.y) for v in polygon_vertices]
+        polygon_bulges = [v.bulge for v in polygon_vertices]
+    else:
+        polygon_xy, _legacy_pairs = _deck_plan_polygon_xy(
+            alignment_obj=alignment_obj,
+            span=span,
+            start_support=start_support,
+            end_support=end_support,
+        )
+        polygon_corners = polygon_xy
+        polygon_bulges = [0.0] * len(polygon_xy)
+
+    # 2) Determine the station range and cross-section perp envelope
+    #    directly from params + compute_result. This is independent of
+    #    polygon-vertex back-projection and naturally accommodates a
+    #    shifting deck_cl_offset_from_alignment (the dcl values at start
+    #    and end may differ; the perp envelope grows accordingly).
+    min_station, max_station, min_perp, max_perp = _fat_deck_envelope(
+        params=params,
         span=span,
         start_support=start_support,
         end_support=end_support,
     )
-
-    # 2) Determine the station range and cross-section perp range.
-    all_stations = [sp[0] for sp in station_perp_pairs]
-    all_perps = [sp[1] for sp in station_perp_pairs]
-
-    min_station = min(all_stations) - _PATH_STATION_BUFFER_FT
-    max_station = max(all_stations) + _PATH_STATION_BUFFER_FT
-    min_perp = min(all_perps) - _CROSS_SECTION_PERP_BUFFER_FT
-    max_perp = max(all_perps) + _CROSS_SECTION_PERP_BUFFER_FT
+    min_station -= _PATH_STATION_BUFFER_FT
+    max_station += _PATH_STATION_BUFFER_FT
+    min_perp -= _CROSS_SECTION_PERP_BUFFER_FT
+    max_perp += _CROSS_SECTION_PERP_BUFFER_FT
 
     # 3) Build the fat deck (sweep) and the trim volume (vertical
     #    extrusion), then intersect.
@@ -306,7 +367,8 @@ def _build_deck_solid(
             deck_profile_offset=params.deck_profile_offset,
         )
         trim_solid = _build_trim_solid(
-            corners_xy=polygon_xy,
+            corners_xy=polygon_corners,
+            bulges=polygon_bulges,
             z_below=z_below,
             z_above=z_above,
         )
@@ -691,6 +753,7 @@ def _trim_z_range(
 def _build_trim_solid(
     corners_xy: List[Tuple[float, float]],
     *,
+    bulges: Optional[List[float]] = None,
     z_below: float,
     z_above: float,
 ):
@@ -699,6 +762,12 @@ def _build_trim_solid(
     The prism extends from `z_below` to `z_above` in world Z, sized
     to contain the fat-deck Z extent so the boolean intersect
     preserves only the fat-deck's XY footprint within the polygon.
+
+    ``bulges`` is an optional list of AutoCAD polyline bulges, one per
+    vertex. Bulge[i] applies to the segment from corners_xy[i] to
+    corners_xy[i+1] (and from corners_xy[-1] back to corners_xy[0] for
+    the closing segment). When ``None``, all bulges default to 0
+    (straight segments) — backward compat with the pre-polygon flow.
     """
     if len(corners_xy) < 3:
         raise DeckError(
@@ -707,6 +776,13 @@ def _build_trim_solid(
     if z_above <= z_below:
         raise DeckError(
             f"trim solid requires z_above > z_below; got {z_below}..{z_above}"
+        )
+    if bulges is None:
+        bulges = [0.0] * len(corners_xy)
+    if len(bulges) != len(corners_xy):
+        raise DeckError(
+            f"bulges length ({len(bulges)}) must match corners_xy length "
+            f"({len(corners_xy)})"
         )
 
     pline = None
@@ -717,7 +793,7 @@ def _build_trim_solid(
         pline = Polyline()
         pline.Elevation = z_below
         for i, (x, y) in enumerate(corners_xy):
-            pline.AddVertexAt(i, Point2d(x, y), 0.0, 0.0, 0.0)
+            pline.AddVertexAt(i, Point2d(x, y), bulges[i], 0.0, 0.0)
         pline.Closed = True
 
         curves = DBObjectCollection()
