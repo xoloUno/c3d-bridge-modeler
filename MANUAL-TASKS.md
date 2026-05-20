@@ -431,15 +431,17 @@ Phase 1 superstructure is closed out. Next iteration is Phase 2.
 
 ## From session: 2026-05-20 — Phase 2 curved horizontal alignment
 
-Phase 2 curved-alignment support landed in a single commit.  Three
-changes to `decks.py`: (1) density-driven path sampling (~1/ft instead
-of fixed 21), (2) `AlignSweepEntityToPath` sweep option so the
-cross-section rotates with the path tangent on curves while keeping
-`Bank=False` (plumb walls), (3) many-vertex trim polygon whose left/
-right edges follow the alignment curve at perpendicular offset instead
-of the Phase 1 straight 4-corner polygon.  `bridge_lines.py` edge
-polylines are now densely sampled (~1 vertex per 10 ft) for the same
-reason; schema version bumped to `v5-curved-edge`.
+Phase 2 curved-alignment support landed in two commits.  Two changes
+to `decks.py`: (1) density-driven path sampling (~1/ft instead of
+fixed 21), (2) many-vertex trim polygon whose left/right edges follow
+the alignment curve at perpendicular offset instead of the Phase 1
+straight 4-corner polygon.  Sweep option stays `NoAlignment` — an
+intermediate commit tried `AlignSweepEntityToPath` but it repositions
+the cross-section (shifting the fat deck laterally), causing a
+regression on straight bridges; reverted in `2df4c68`.
+`bridge_lines.py` edge polylines are now densely sampled (~1 vertex
+per 10 ft) for the same reason; schema version bumped to
+`v5-curved-edge`.
 
 No changes to `girders.py` (girders remain straight chords between
 bearings), `haunches.py` (benefits automatically via `build_fat_deck_
@@ -453,10 +455,12 @@ cutter`), or any pure-math module.  162 macOS tests still pass.
 - [ ] Copy `test/params.phase1.example.json` to a local config
       targeting the curved alignment.
 
-### Curved bridge verification
+### Curved bridge verification — VERIFIED 2026-05-20 (build + regenerate)
 
-- [ ] Pull `main` on Windows; bump `phase1_node.py` reload trigger;
+- [x] Pull `main` on Windows; bump `phase1_node.py` reload trigger;
       run the graph against the curved-alignment config.
+- [x] Build completed without errors: 4 girders, 4 haunches, 1 deck
+      slab, edge polylines preserved.
 - [ ] **Plan view**: deck slab follows the alignment curve — curved
       edges, not straight.  Edge-of-deck polylines follow the same
       curve.
@@ -472,19 +476,18 @@ cutter`), or any pure-math module.  162 macOS tests still pass.
       boolean-trim contract as Phase 1, now on a curved cutter.
 - [ ] `XDLIST` on one deck solid shows `BRIDGE_MODELER` xdata with
       payload like `{"element":"deck","span_id":"SPAN-1",...}`.
-- [ ] Re-run the graph (no params changes).  Summary shows
-      `Decks: built N (...); purged N prior entities` — regenerate
+- [x] Re-run the graph (no params changes).  Summary shows
+      `Decks: built 1 (...); purged 1 prior entity` — regenerate
       contract holds on curved alignments.
 
-### Straight-alignment regression
+### Straight-alignment regression — VERIFIED 2026-05-20
 
-- [ ] Re-run the original D-E straight-alignment test case.
-- [ ] Deck dimensions match Phase 1 results: 2.0% cross-slope at
+- [x] Re-run the original D-E straight-alignment test case.
+- [x] Deck dimensions match Phase 1 results: 2.0% cross-slope at
       both ends, deck plan corners coincide with edge polylines,
       girder depth correct.
-- [ ] Watch node summary shows `Bridge lines: ... regenerated 3 (...)`
-      on first run post-pull (schema version `v4→v5` self-heal), then
-      `preserved 3` on subsequent runs.
+- [x] Watch node summary shows `Bridge lines: ... preserved 3 (...)`
+      (schema version already at `v5` from prior run).
 
 ### Edge cases (if a suitable drawing is available)
 
@@ -495,15 +498,15 @@ cutter`), or any pure-math module.  162 macOS tests still pass.
       solid taper correctly as the perpendicular-to-alignment width
       changes linearly from start to end support.
 
-### Highest-risk item to watch
+### Highest-risk item — resolved
 
-If the `AlignSweepEntityToPath` orientation differs from expected
-(e.g. cross-section rotated 90° or mirrored), the deck will look
-obviously wrong in the first run.  Fix: adjust the `Matrix3d.
-AlignCoordinateSystem` call in `_build_fat_deck_swept` — swap which
-profile-local axis maps to `align_left_xy` vs `align_ahead_xy`.
-The straight-alignment regression test is the control that validates
-the change is inert on non-curved bridges.
+`AlignSweepEntityToPath` was tried but it repositions the cross-
+section to the path start via an internal reference point, double-
+moving the already-placed cross-section and shifting the fat deck
+laterally.  Reverted to `NoAlignment` in commit `2df4c68`.  The
+`Polyline3d` path still follows the curve; cross-slope orientation
+error is bounded at `slope × (1 − cos θ)`, negligible for typical
+geometries.  Straight-alignment regression confirmed clean.
 
 
 ## Operational notes for future runs

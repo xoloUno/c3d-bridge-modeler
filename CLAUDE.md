@@ -91,7 +91,7 @@ test/                  Test parameter files and expected outputs
 - Girders (`src/girders.py`) — **unchanged**; girders remain straight chords between bearings per Phase 2 scope. Curved/chorded girders are Phase 3.
 - Haunches (`src/haunches.py`) — **unchanged**; the deck cutter now follows the curve automatically.
 - Pure-math layer — **unchanged**; all 162 macOS tests still pass.
-- Pending Windows verification on a curved-alignment test drawing — see `MANUAL-TASKS.md` "Phase 2 curved horizontal alignment" section.
+- Windows verification (2026-05-20): curved-alignment test bridge built successfully (D-E alignment, 4 × W36X150, 47 ft span). Straight-alignment regression clean — deck edges coincide with `BRIDGE-NOPLOT` polylines. See `MANUAL-TASKS.md` "Phase 2 curved horizontal alignment" for remaining visual checks.
 
 ### Known deferrals (gated at params parse time)
 - **`follow_superelevation: true`** — alignment-superelevation tracking is not implemented; setting `true` raises `Phase1ParamsError` rather than silently rendering a non-superelevated deck.
