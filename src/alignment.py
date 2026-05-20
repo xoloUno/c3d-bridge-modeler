@@ -202,14 +202,53 @@ def _iter_dotnet_collection(coll):
     return _gen()
 
 
-def _entity_type_name(entity) -> str:
-    """Return the bare enum-value name of ``entity.EntityType``.
+# Integer-to-name mapping for AlignmentSubEntityType, which pythonnet
+# stringifies as the underlying integer rather than the symbolic name.
+# Verified empirically against a C3D 2024 D-E alignment: the walk of a
+# SCS composite top-level entity yielded sub-entities with EntityType
+# string values "257", "258", "259".
+#
+# Source: Autodesk.Civil.DatabaseServices.AlignmentSubEntityType
+#   Tangent = 257   (straight line)
+#   Curve   = 258   (circular arc)
+#   Spiral  = 259   (clothoid spiral)
+_SUBENTITY_INT_TO_NAME = {
+    "257": "Tangent",
+    "258": "Curve",
+    "259": "Spiral",
+}
 
-    ``str(entity.EntityType)`` in pythonnet often returns the fully
-    qualified name (``"Autodesk.Civil.DatabaseServices.AlignmentEntityType.Arc"``);
-    take the last dotted segment for a stable comparison.
+
+def _entity_type_name(entity) -> str:
+    """Return a stable string name for the entity's type.
+
+    Handles three pythonnet stringification quirks empirically observed
+    in C3D 2024:
+
+    1. Top-level ``AlignmentEntity.EntityType`` may stringify as a fully
+       qualified name (``"Autodesk.Civil.DatabaseServices.AlignmentEntityType.Arc"``);
+       we take the last dotted segment.
+    2. ``AlignmentSubEntity`` uses ``SubEntityType`` (a different enum,
+       ``AlignmentSubEntityType``), not ``EntityType``. We try both.
+    3. ``AlignmentSubEntityType`` enum values often stringify as their
+       underlying integer (e.g. "257" instead of "Tangent"). The
+       ``_SUBENTITY_INT_TO_NAME`` table normalizes these to names.
     """
-    return str(entity.EntityType).split(".")[-1]
+    raw = None
+    # Sub-entity uses SubEntityType; top-level uses EntityType.
+    for attr in ("SubEntityType", "EntityType"):
+        if hasattr(entity, attr):
+            try:
+                raw = getattr(entity, attr)
+                break
+            except Exception:  # noqa: BLE001
+                continue
+
+    if raw is None:
+        return "Unknown"
+
+    name = str(raw).split(".")[-1]
+    return _SUBENTITY_INT_TO_NAME.get(name, name)
 
 
 def _walk_entity(entity, leaves):
@@ -239,12 +278,20 @@ def _walk_entity(entity, leaves):
             _walk_entity(sub, leaves)
         return
 
-    # Leaf classification by name fragment
-    if et == "Arc" or et.endswith("Arc") and "ArcArc" not in et:
+    # Leaf classification — names normalized by _entity_type_name above.
+    # Arc / Curve both map to our "ARC" entity_type.
+    if et in ("Arc", "Curve") or (
+        (et.endswith("Arc") or et.endswith("Curve"))
+        and "ArcArc" not in et and "CurveCurve" not in et
+    ):
         _append_arc(entity, leaves)
         return
 
-    if et == "Line" or (et.endswith("Line") and "LineLine" not in et):
+    # Line / Tangent both map to our "TANGENT" entity_type.
+    if et in ("Line", "Tangent") or (
+        (et.endswith("Line") or et.endswith("Tangent"))
+        and "LineLine" not in et
+    ):
         _append_tangent(entity, leaves)
         return
 
@@ -260,16 +307,47 @@ def _walk_entity(entity, leaves):
 
 
 def _append_arc(entity, leaves):
-    """Append an ARC tuple with signed radius (positive = CCW)."""
+    """Append an ARC tuple with signed radius (positive = CCW).
+
+    Sub-entity Arcs (``AlignmentSubEntityArc``) and top-level Arcs
+    (``AlignmentArc``) both expose ``Radius`` and ``StartStation`` /
+    ``EndStation``, but Clockwise/direction handling can differ between
+    the two and across C3D versions. We try several property names, and
+    if none work, fall back to numerically inferring direction from the
+    StartDirection / EndDirection angle change.
+
+    The sign of the radius is informational only — the polygon
+    derivation reads geometry via the alignment query callbacks, not
+    the radius value.
+    """
     try:
         radius_mag = float(entity.Radius)
     except Exception:  # noqa: BLE001
         radius_mag = 0.0
-    try:
-        clockwise = bool(entity.Clockwise)
-    except Exception:  # noqa: BLE001
-        # Fall back to numerically detecting direction from start/end tangents
-        clockwise = False
+
+    clockwise = None
+    for attr in ("Clockwise", "IsClockwise"):
+        if hasattr(entity, attr):
+            try:
+                clockwise = bool(getattr(entity, attr))
+                break
+            except Exception:  # noqa: BLE001
+                continue
+
+    if clockwise is None:
+        # Numerical fallback: positive Δdirection (mod 2π) = CCW
+        try:
+            d0 = float(entity.StartDirection)
+            d1 = float(entity.EndDirection)
+            delta = d1 - d0
+            while delta > math.pi:
+                delta -= 2 * math.pi
+            while delta < -math.pi:
+                delta += 2 * math.pi
+            clockwise = delta < 0.0
+        except Exception:  # noqa: BLE001
+            clockwise = False
+
     # Math convention: positive radius = center on left of travel direction
     radius_signed = -radius_mag if clockwise else radius_mag
     leaves.append((
