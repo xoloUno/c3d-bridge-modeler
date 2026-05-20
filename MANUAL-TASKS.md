@@ -509,6 +509,64 @@ error is bounded at `slope × (1 − cos θ)`, negligible for typical
 geometries.  Straight-alignment regression confirmed clean.
 
 
+## From session: 2026-05-20 — Phase 2.1 polygon-driven deck architecture
+
+### Verified end-to-end on D-E test alignment
+
+- [x] **Straight-bridge regression** — built without errors after the
+      `bridge_lines.ensure_phase1_bridge_lines` call was removed from
+      the orchestrator. Deck slab matches the new `BRIDGE-2D-DECK`
+      polygon (a 4-corner trapezoid for straight + tapering). No
+      Phase 1 regressions.
+- [x] **Curved-bridge tapering, ±10° skews** — `BRIDGE-2D-DECK`
+      polygon renders with arc bulges on left/right edges, deck slab
+      curves match. Midstation perpendicular deck width measures
+      exactly 23.5 ft (linear interpolation between 22 ft start and
+      25 ft end), confirming the skewed-corner-bulge fix
+      (commit `87a997c`).
+- [x] **Polygon grip-edit roundtrip** — grip-edited a vertex on the
+      `BRIDGE-2D-DECK` polygon, re-ran the tool. Console reported
+      "preserved 1 (DECK-PLAN)" — the polygon stayed at the edited
+      shape, and the deck slab regenerated to follow the edited
+      polygon. Inventor-style sketch-drives-solid workflow confirmed.
+- [x] **Shifting `deck_cl_offset_from_alignment`** — replaced the
+      single-value form with a 2-point profile
+      (`[{station, value: -9}, {station, value: -6}]`) on a
+      single-slope deck (crown well outside deck range). Validator
+      accepted; deck slab shifted laterally between bearings as
+      expected.
+- [x] **Bearing-line sample lines** — new `ABUT-A.BRG` /
+      `ABUT-B.BRG` sample lines appeared alongside the existing
+      `ABUT-A` / `ABUT-B` support sample lines.
+- [x] **No visible kinks** in section / wireframe / conceptual /
+      shades-of-gray views with `crown_offset = +9` (crown fully
+      outside the deck range). Math confirmed: parallelogram cross-
+      section, single slope_left applied across the entire deck.
+
+### Bugs surfaced and fixed during the session
+
+- **Sub-entity classification (`bc23ccf`)** — `alignment_entity_ranges`
+  initially mis-classified every sub-entity of composite alignment
+  entities as TANGENT because (a) `AlignmentSubEntity` uses
+  `SubEntityType` not `EntityType`, and (b) pythonnet-3 stringifies
+  `AlignmentSubEntityType` enum values as their underlying integers
+  ("257" / "258" / "259") rather than symbolic names. Fixed by trying
+  both property names and adding an integer-to-name lookup.
+- **Schema version bump (`920fbcb`)** — stale polygons from the
+  pre-fix run were preserved because their schema_version still
+  matched. Bumped `v1` → `v2-subentity-classification` to force
+  regenerate.
+- **Skewed-corner bulges (`87a997c`)** — polygon arc bulges were
+  being computed using un-skewed alignment-perpendicular endpoints
+  but applied to the polyline's actual skewed bearing-corner
+  vertices, producing arcs that didn't pass through the midstation
+  sample. Fixed by passing the skewed corners through to the edge
+  derivation as `start_xy` / `end_xy`. Schema version bumped to
+  `v3-skewed-corner-bulges`.
+
+### No remaining open items from this session
+
+
 ## Operational notes for future runs
 
 - **`CTRL-S` the DWG** immediately after a successful Dynamo run.
