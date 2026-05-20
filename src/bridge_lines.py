@@ -72,7 +72,7 @@ XDATA_KEY = "bridge_line"
 # edits to a polyline whose schema_version matches the current code
 # are still preserved via the find-or-create path.
 _SCHEMA_VERSION_KEY = "schema_version"
-_SCHEMA_VERSION = "v7-single-arc"
+_SCHEMA_VERSION = "v7b-single-arc"
 
 # Reference-line names. Phase 1 = single bridge per drawing; multi-bridge
 # namespacing is an open question (scope.md "Open Questions").
@@ -308,7 +308,7 @@ def _bulge_from_three_points(
     bulge_mag = sag / half_chord
     # Cross product of chord direction and sagitta gives sign.
     cross = (p2[0] - p1[0]) * sag_y - (p2[1] - p1[1]) * sag_x
-    return bulge_mag if cross >= 0 else -bulge_mag
+    return -bulge_mag if cross >= 0 else bulge_mag
 
 
 def _ensure_polyline(
