@@ -106,8 +106,10 @@ must make 1–3 defensible against the prior art in §8.
   parametric-regeneration contribution. Substructure / super-elevation / curved
   girders go in an explicit "Limitations & future work" section (reuse the
   deferral list in `CLAUDE.md`).
-- [ ] **F2.** Decide the open-vs-closed artifact strategy (see §5) and write a
-  reproducibility statement consistent with it.
+- [ ] **F2.** Write methodology-first so the paper never depends on a code
+  release (see §5); keep code-release and benchmark-artifact release as
+  additive, one-sentence decisions decoupled from the writing. Add a
+  reproducibility statement consistent with whatever is ultimately released.
 
 ## 4. Proposed paper outline
 
@@ -125,24 +127,37 @@ must make 1–3 defensible against the prior art in §8.
 
 ## 5. IP / open-vs-closed strategy (Stantec)
 
-Gemini's point is correct and worth acting on: **you can publish the method,
-architecture, and logic without releasing the Python source or Dynamo graph**,
-and case studies can be anonymized ("a 3-span precast girder bridge on a major
-North American highway project").
+**Guiding principle — methodology-first, written once.** Do not write two
+papers, and do not write a paper that *depends* on releasing the source. From
+day one, write the paper so it stands entirely on the **system architecture and
+underlying logic** — input parameters (alignment/profile/surface), the geometric
+translation logic (how the Python computes 3D coordinates, offsets, skew, arc
+bulges), and the output (the parametric bridge model). Acceptance never requires
+the Python files or the Dynamo graph.
+
+This decouples the IP decision from the writing:
+- If Stantec keeps the tool closed-source, the paper is already complete — it
+  explains the science without giving away the proprietary product.
+- If Stantec allows open-sourcing, you add **one sentence**: "The source code
+  for this framework is available at [GitHub link]." No rewrite.
+
+Case studies can be anonymized regardless ("a 3-span precast girder bridge on a
+major North American highway project").
 
 Honest caveats to weigh:
-- A method-only (closed-code) paper *raises* the novelty/clarity bar — reviewers
-  can't inspect the implementation, so the methodological contribution and
-  evaluation must be airtight.
-- *Automation in Construction* increasingly values reproducibility. Even if code
-  stays closed, plan to release **something** citable: the benchmark parameter
-  files + expected-output CSVs (the AISC table is already openly licensed). This
-  also keeps a future **dataset-paper** option open.
-- Resolve F2 *before* writing the evaluation so claims and artifact match.
+- A method-only paper *raises* the clarity bar — reviewers can't inspect the
+  implementation, so §2's contribution and the §3 evaluation must be airtight
+  and the methodology (E1) fully self-contained.
+- *Automation in Construction* increasingly values reproducibility. Treat the
+  **benchmark params + expected-output CSVs** as a *separately* releasable,
+  citable artifact (the AISC table is already openly licensed) — independent of
+  the core code decision, and additive in the same one-sentence way. This also
+  keeps a future **dataset-paper** option open.
 
 Action: get explicit sign-off from Stantec leadership on (a) publishing the
-method, (b) the anonymization wording, (c) what (if anything) can be released as
-an artifact.
+method (default-yes under this strategy), (b) the anonymization wording, and
+(c) whether the code and/or the benchmark artifact may be released — but note
+that none of these block starting to write.
 
 ## 6. Using Scopus AI + the Stantec eLibrary
 
