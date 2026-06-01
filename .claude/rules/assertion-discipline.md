@@ -1,0 +1,1 @@
+../../../_playbook/core/rules/assertion-discipline.md

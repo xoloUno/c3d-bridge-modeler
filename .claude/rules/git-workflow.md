@@ -1,0 +1,1 @@
+../../../_playbook/core/rules/git-workflow.md
