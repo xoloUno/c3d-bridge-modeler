@@ -1,0 +1,1 @@
+../../../_playbook/core/rules/playbook-inbox.md
