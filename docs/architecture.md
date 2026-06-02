@@ -390,11 +390,11 @@ Used for:
 
 #### `src/c3d_doc.py` -- Document/Transaction Helpers
 
-Wraps the .NET `DocumentLock` and `Transaction` disposables in Python context managers with explicit `Dispose()` calls in `finally` blocks. This avoids the pythonnet 3 `__exit__` mis-binding that masked real errors for most of Phase 0 debugging.
+Wraps the .NET `DocumentLock` and `Transaction` disposables in Python context managers with explicit `Dispose()` calls in `finally` blocks. Without this, pythonnet 3's `__exit__` mis-binding masks real errors (most of Phase 0 debugging was this).
 
 #### `src/bridge_lines.py` -- DEPRECATED
 
-Formerly created BRIDGE-NOPLOT EDGE-L, EDGE-R, CL polylines. Replaced by the BRIDGE-2D-DECK polygon in Phase 2.1. Module retained in the repo but no longer imported by the orchestrator. Existing BRIDGE-NOPLOT polylines in drawings are inert.
+Formerly created BRIDGE-NOPLOT EDGE-L, EDGE-R, CL polylines. Replaced by BRIDGE-2D-DECK polygon in Phase 2.1. Still in the repo but no longer imported. Existing BRIDGE-NOPLOT polylines in drawings are inert.
 
 ## Layer Strategy
 
@@ -500,7 +500,7 @@ The C3D-side modules (`girders.py`, `haunches.py`, `decks.py`, `deck_polygon.py`
 
 ### Why Sweep + Boolean Instead of Loft
 
-The deck and haunch solids both use boolean operations rather than direct lofting or sweeping to their final shape. Here's why:
+Both deck and haunch solids use booleans rather than direct lofting.
 
 **Deck**: an earlier version lofted between two skewed-bearing cross-sections. When the two supports had different skew angles (e.g., +10 deg and -10 deg), the loft introduced a twist artifact that distorted the alignment-perpendicular cross-slope. The sweep + intersect approach builds a straight-through prismatic deck (constant cross-slope everywhere) and then trims it to the plan footprint with a boolean.
 
@@ -508,7 +508,7 @@ The deck and haunch solids both use boolean operations rather than direct loftin
 
 ### The Polygon-Driven Deck (Phase 2.1 Architecture)
 
-Phase 2.1 resolved a fundamental problem: the deck solid's trim polygon and the BRIDGE-NOPLOT edge polylines were computed independently from the same params, so on tapered curved bridges the deck slab edges and the dimensioning polylines didn't match. Neither was "the right answer" either -- neither captured the real-world expectation of tangent-constrained arcs at curve-to-tangent transitions.
+Phase 2.1 fixed a problem: the deck solid's trim polygon and the BRIDGE-NOPLOT edge polylines were computed independently from the same params, so on tapered curved bridges the deck edges and the dimensioning polylines didn't match. Neither was right -- neither produced the tangent-constrained arcs you'd expect at curve-to-tangent transitions.
 
 The fix is Inventor-style: **a single editable sketch entity drives the solid**.
 
