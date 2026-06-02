@@ -35,11 +35,11 @@ The tool creates two categories of objects with different re-run behavior:
 +------------------------------------------------------+
 ```
 
-The deck plan polygon is the key skeleton element: it is an editable
+The deck plan polygon is the main skeleton element: an editable
 AutoCAD polyline (with arc bulges for curved alignments) that defines
 the deck footprint. The deck solid is built FROM this polygon. If a
 designer grip-edits a polygon vertex, the deck solid follows on the
-next run. This is the Inventor-style "sketch drives solid" pattern.
+next run -- Inventor-style "sketch drives solid."
 
 Defined in `CLAUDE.md` under "Key Architecture Decisions" and detailed in `scope.md`.
 
@@ -79,17 +79,17 @@ What happens when you hit Run in Dynamo:
 
 ### (1) The Dynamo Node -- `src/phase1_node.py`
 
-The code you paste into the Dynamo Python Script node. Three jobs:
+The code you paste into the Dynamo Python Script node. It does three things:
 
-1. **Cleans the Python path** (lines 41-43) -- strips stale repo paths from `sys.path` so you can't accidentally run old code from a different clone.
-2. **Purges cached modules** (lines 47-66) -- Dynamo caches Python modules across runs; this forces fresh imports every time. The purge list includes all `src/` modules: `phase1_build`, `phase1_compute`, `girders`, `haunches`, `decks`, `deck_polygon`, `deck_plan`, `girder_geometry`, `haunch_geometry`, `deck_geometry`, etc.
-3. **Calls the orchestrator** (line 69) -- `phase1_build.main(repo_root, params_path)`.
+1. **Cleans the Python path** (lines 41-42) -- strips stale repo paths from `sys.path` so you don't accidentally run old code from a different clone.
+2. **Purges cached modules** (lines 47-72) -- Dynamo caches Python modules across runs; this forces fresh imports every time. The purge list covers all `src/` modules.
+3. **Calls the orchestrator** (line 75) -- `phase1_build.main(repo_root, params_path)`.
 
-The **reload trigger** on line 29 is a hack around Dynamo's caching -- Dynamo only re-executes a Python node if the node body text changed, so bumping the number after a `git pull` forces a re-run.
+The **reload trigger** on line 29 is a hack: Dynamo only re-executes a Python node if the body text changed, so bumping the number after a `git pull` forces re-execution.
 
 ### (2) The Orchestrator -- `src/phase1_build.py`
 
-The conductor. Everything happens inside a document lock + transaction (lines 101-203):
+Everything happens inside a document lock + transaction (lines 101-203):
 
 ```python
 with c3d_doc.locked_document():          # required or AutoCAD throws eLockViolation
@@ -119,7 +119,7 @@ Note that `bridge_lines.py` (the old BRIDGE-NOPLOT EDGE-L, EDGE-R, CL polylines)
 
 ### (3) The Building Blocks
 
-Each module has a clear responsibility. Dependency graph:
+Dependency graph:
 
 ```
   phase1_node.py
@@ -153,12 +153,12 @@ Each module has a clear responsibility. Dependency graph:
        +-- bridge_lines.py          (DEPRECATED — replaced by deck_polygon)
 ```
 
-The split between **pure math** and **C3D-only** is deliberate. Every pure-math module has this comment at the top:
+The pure-math / C3D-only split is deliberate. Every pure-math module has this comment at the top:
 
 > Pure-logic module: must not import anything from the Civil 3D API
 > (`clr`, `Autodesk.*`). Importable on macOS for unit testing.
 
-That's why we can run 201 unit tests on macOS -- the entire elevation chain, parameter validation, AISC lookup, skew correction, cross-section geometry, deck plan polygon derivation, and station-varying interpolation all run without Civil 3D.
+This is why 201 unit tests run on macOS -- elevation chain, parameter validation, AISC lookup, skew correction, cross-section geometry, deck plan polygon derivation, and station-varying interpolation all work without Civil 3D.
 
 ## What Each Module Does
 
@@ -166,7 +166,7 @@ That's why we can run 201 unit tests on macOS -- the entire elevation chain, par
 
 #### `src/phase1_params.py` -- Parameter Loading
 
-Loads the JSON, validates it, returns frozen dataclasses:
+Loads and validates the JSON, returns frozen dataclasses:
 
 - `Support` -- station, skew angle, support type, bearing offsets
 - `Span` -- links two supports by ID
@@ -179,7 +179,7 @@ The **edge-spacing rule** (docstring lines 30-36): specify exactly ONE of `left_
 
 #### `src/station_profile.py` -- Station-Varying Parameters
 
-Handles parameters that can be constant OR vary along the alignment. `crown_offset` and `deck_cl_offset_from_alignment` both use this. The JSON accepts either form:
+Handles parameters that are constant or vary along the alignment. `crown_offset` and `deck_cl_offset_from_alignment` both use this. The JSON accepts either form:
 
 ```json
 "crown_offset": 0.0
@@ -192,11 +192,11 @@ Both parse into a `StationProfile` with an `.at(station)` method that linearly i
 
 #### `src/aisc.py` -- Steel Shape Lookup
 
-Loads `data/aisc_w_shapes.json` (266 W-shapes from W10 to W44). Each shape is a `WShape` dataclass with the dimensions that matter for geometry: `d_in` (depth), `bf_in` (flange width), `tf_in` (flange thickness), `tw_in` (web thickness). All stored in inches -- converted to feet at the geometry boundary via `src/units.py`. Spot-checked against AISC Steel Construction Manual v15/v16 on 2026-05-18.
+Loads `data/aisc_w_shapes.json` (266 W-shapes, W10 to W44). Each shape is a `WShape` dataclass with the dimensions needed for geometry: `d_in` (depth), `bf_in` (flange width), `tf_in` (flange thickness), `tw_in` (web thickness). Stored in inches, converted to feet at the geometry boundary via `src/units.py`. Spot-checked against AISC Steel Construction Manual v15/v16 on 2026-05-18.
 
 #### `src/elevation.py` -- The Vertical Chain
 
-Two key functions:
+Two functions:
 
 **`top_of_deck_at_offset()`** (lines 44-59) -- given a profile elevation, crown position, cross slopes, and a girder's offset from alignment, computes the deck top elevation at that girder:
 
@@ -220,7 +220,7 @@ top_of_deck
 
 #### `src/phase1_compute.py` -- Pure-Math Orchestrator
 
-Takes params + AISC table + a profile-elevation callback, produces a `Phase1ComputeResult` containing `ComputedSpan` objects. Each span contains:
+Takes params + AISC table + a profile-elevation callback, returns a `Phase1ComputeResult` with `ComputedSpan` objects. Each span contains:
 
 - `GirderInSpan` objects, each with a `start` and `end` `GirderAtBearing`:
 
@@ -278,7 +278,7 @@ Also exports `crown_kink_present()`, used by the params validator to gate the sh
 
 #### `src/deck_plan.py` -- Deck Plan Polygon Derivation (NEW in Phase 2.1)
 
-The most complex pure-math module. Derives the closed CCW polygon that defines the deck footprint in XY, with arc bulges for curved segments.
+The most complex pure-math module. Derives a closed CCW polygon for the deck footprint in XY, with arc bulges for curved segments.
 
 The polygon traces: `start_left -> start_right -> (right edge) -> end_right -> end_left -> (left edge) -> start_left`.
 
@@ -292,7 +292,7 @@ Each edge segment is derived via **5-way gating** based on alignment geometry:
 | Tapering, one tangent-to-curve transition | Walk from the tangent end; arc tangent-constrained to preceding edge direction |
 | Tapering, viaduct (2+ transitions) | Linear-in-station vertices at every transition; ARC segments get arcs tangent to alignment |
 
-Key primitives: `arc_from_start_tangent_endpoint()` and `arc_through_three_points()`. The polygon uses the **skewed bearing corners** as start/end points (not the un-skewed alignment-perpendicular endpoints), which matters for arcs on tapered curved bridges with skewed supports.
+Primitives: `arc_from_start_tangent_endpoint()` and `arc_through_three_points()`. The polygon uses **skewed bearing corners** as start/end points (not the un-skewed alignment-perpendicular endpoints) -- this matters for arcs on tapered curved bridges with skewed supports.
 
 35 unit tests in `test/test_deck_plan.py` cover all five gating cases.
 
@@ -300,23 +300,23 @@ Key primitives: `arc_from_start_tangent_endpoint()` and `arc_through_three_point
 
 #### `src/skeleton.py` -- Sample Lines at Supports
 
-Creates Civil 3D Sample Lines at each support station:
+Creates Civil 3D sample lines at each support station:
 
 - Grouped under `BRIDGE-SUPPORTS` (line 42)
 - Named by `support_id` (e.g., `ABUT-A`, `PIER-1`)
 - Skewed to match `support.skew_angle`
 - Length = deck width + 2 ft overhang (1 ft each side)
-- **Idempotent**: if a sample line with that name already exists, it is preserved -- designers can drag it and the tool respects the new position
+- **Idempotent**: if a sample line with that name already exists, it stays -- designers can drag it and the tool reads the new position
 
 Also creates **bearing-line sample lines** at each `support.station + bearing_offsets[i]`, named `{support_id}.BRG` (or `.BRG.{i}` for multi-bearing supports). Skipped when `bearing_offset == 0` to avoid duplicating the support sample line.
 
 #### `src/deck_polygon.py` -- Deck Plan Polygon Skeleton (NEW in Phase 2.1)
 
-The bridge between the pure-math `deck_plan.py` and the C3D drawing. Creates or preserves a closed AutoCAD `Polyline` on `BRIDGE-2D-DECK` (color 142, light blue, **plottable and unlocked** -- designers need to see and grip-edit it).
+Connects the pure-math `deck_plan.py` to the C3D drawing. Creates or preserves a closed AutoCAD `Polyline` on `BRIDGE-2D-DECK` (color 142, light blue, **plottable and unlocked** so designers can see and grip-edit it).
 
-Key behaviors:
-- **Find-or-create with self-heal**: tagged with xdata `{deck_polygon: "DECK-PLAN", schema_version: "v3-skewed-corner-bulges"}`. If the version matches, the existing polygon is preserved (including designer grip-edits). If stale or missing, regenerated from `deck_plan.derive_deck_plan_polygon()`.
-- **Read-back**: vertices and bulges are read back via `GetPoint2dAt(i)` + `GetBulgeAt(i)` and returned to the orchestrator. The deck solid is built FROM these read-back values, so grip-edits flow through to the 3D geometry.
+Behaviors:
+- **Find-or-create with self-heal**: tagged with xdata `{deck_polygon: "DECK-PLAN", schema_version: "v3-skewed-corner-bulges"}`. If the version matches, the existing polygon is kept (including grip-edits). If stale or missing, regenerated from `deck_plan.derive_deck_plan_polygon()`.
+- **Read-back**: vertices and bulges are read via `GetPoint2dAt(i)` + `GetBulgeAt(i)` and returned to the orchestrator. The deck solid is built FROM these values, so grip-edits flow through to the 3D geometry.
 
 #### `src/girders.py` -- Girder Swept Solids
 
@@ -330,7 +330,7 @@ For each girder in each span:
 6. Sweeps via `Solid3d.CreateSweptSolid` with `Align=NoAlignment` + `Bank=False`
 7. Places on `BRIDGE-GIRDER` layer (red), with xdata `{element, span_id, girder_index, girder_shape, id}`
 
-**Key insight**: profile elevation is sampled at each girder's actual world station (`bearing_station + perp_offset * tan(skew)`), not at the bearing station on the alignment. This means girder-to-girder slope in alignment-perpendicular sections equals the design cross-slope exactly.
+Profile elevation is sampled at each girder's actual world station (`bearing_station + perp_offset * tan(skew)`), not at the bearing station on the alignment. This makes the girder-to-girder slope in alignment-perpendicular sections match the design cross-slope exactly.
 
 Girders remain **straight chords** between bearings. Curved/chorded girders are Phase 3.
 
@@ -340,11 +340,11 @@ Re-run purges every entity on `BRIDGE-GIRDER` and rebuilds from scratch.
 
 Construction is **sweep + boolean intersect**:
 
-1. Build a **fat deck**: sweep a wider-than-actual alignment-perpendicular cross-section along the alignment's 3D path. Path sampling is density-driven (~1 sample/ft, min 21) so the `Polyline3d` path closely approximates curved alignments. `Align=NoAlignment` + `Bank=False` keeps the cross-section perpendicular to alignment, preserving design cross-slope.
-2. Build a **trim volume**: vertically extrude the **deck plan polygon** (read back from the BRIDGE-2D-DECK skeleton entity, with arc bulges) up by a tall extent.
+1. Build a **fat deck**: sweep a wider-than-actual alignment-perpendicular cross-section along the alignment's 3D path. Path sampling is density-driven (~1 sample/ft, min 21) so the `Polyline3d` path tracks curved alignments closely. `Align=NoAlignment` + `Bank=False` keeps the cross-section perpendicular to alignment, preserving design cross-slope.
+2. Build a **trim volume**: vertically extrude the **deck plan polygon** (read back from the BRIDGE-2D-DECK skeleton entity, with arc bulges) by a tall extent.
 3. Boolean **intersect** the fat deck with the trim volume -> final deck with correct cross-slope AND correct plan footprint (including arcs on curved bridges).
 
-The `_fat_deck_envelope()` function computes the sweep path + cross-section perp envelope directly from params + compute_result, automatically widening to accommodate a laterally-shifting deck CL.
+`_fat_deck_envelope()` computes the sweep path + cross-section perp envelope from params + compute_result, widening automatically when the deck CL shifts laterally.
 
 Layer `BRIDGE-DECK` (color 7/white), xdata `{element, span_id, id}`. Exports `build_fat_deck_cutter()` for reuse by haunches.
 
@@ -360,13 +360,13 @@ Layer `BRIDGE-DECK-HAUNCH` (color 51/yellow-brown), xdata `{element, span_id, gi
 
 #### `src/alignment.py` -- Alignment/Profile Queries
 
-Civil 3D API wrapper. Key functions:
+Civil 3D API wrapper. Main functions:
 
 - `point_at_station(alignment, station, offset)` -> `(easting, northing)`
 - `direction_at_station(alignment, station)` -> bearing in radians
 - `elevation_at_station(profile, station)` -> Z
 - `point_on_skewed_bearing(alignment, station, skew_deg, perp_offset)` -> `(x, y)` -- computes the XY of a point on a skewed bearing line at a given perpendicular offset from the alignment
-- `alignment_entity_ranges(alignment, start_sta, end_sta)` -> list of `(entity_type, start_sta, end_sta, radius)` tuples -- **added in Phase 2.1**, walks `alignment_obj.Entities` and recurses into composite entities (e.g. `SpiralCurveSpiral`). Falls back to numerical curvature detection (sampling `direction_at_station`) if the entity walk fails, so the build never crashes on unsupported alignment shapes.
+- `alignment_entity_ranges(alignment, start_sta, end_sta)` -> list of `(entity_type, start_sta, end_sta, radius)` tuples -- **added in Phase 2.1**, walks `alignment_obj.Entities` and recurses into composites (e.g. `SpiralCurveSpiral`). Falls back to numerical curvature detection (sampling `direction_at_station`) if the entity walk fails, so the build never crashes on unsupported alignment shapes.
 
 The entity walk surfaced two pythonnet quirks (documented in `CLAUDE.md`): `AlignmentSubEntity` uses `SubEntityType` (not `EntityType`), and `AlignmentSubEntityType` enum values may stringify as integers (`"257"` for Tangent, `"258"` for Curve, `"259"` for Spiral).
 
@@ -381,12 +381,12 @@ Every bridge object gets an xdata tag under the `BRIDGE_MODELER` RegApp. The pay
 {"element": "HAUNCH", "span_id": "SPAN-1", "girder_index": 1}
 ```
 
-This enables:
+Used for:
 
 - **Re-run purging** -- per-layer purge erases everything on e.g. `BRIDGE-GIRDER`
-- **Idempotent find-or-create** -- skeleton elements are found by name/xdata before deciding to create
+- **Idempotent find-or-create** -- skeleton elements are found by name/xdata before creating new ones
 - **Self-heal** -- deck_polygon and bridge_lines detect schema_version mismatches and regenerate
-- **Selection filters** -- `XDLIST` command shows the tags; scripts can filter by element type
+- **Selection filters** -- `XDLIST` shows the tags; scripts can filter by element type
 
 #### `src/c3d_doc.py` -- Document/Transaction Helpers
 
