@@ -408,7 +408,7 @@ Rationale: implicit "lowest-of-corners" sampling pushes the entire footing deepe
 - `CURVED_RADIUS` girder mode: independent constant radius per girder (for widening bridges with non-concentric girder radii)
 - Girder spacings at midspan / intermediate pier stations (required control points for curved modes)
 - Superelevation-following mode for deck cross slope (haunch profiles lofted between stations with varying cross-slope)
-- **Upgrade edge-of-deck and bridge-CL reference geometry from polylines to true C3D Alignments** when curved-girder workflows need station/offset queries (e.g. `alignment.PointLocation` along the deck CL). Phase 1 used polylines on `BRIDGE-NOPLOT` to sidestep a pythonnet 3 overload-resolution issue with `Alignment.Create`; the path back is documented in `CLAUDE.md` (PythonNet 3 quirks → `.Overloads[T...]` for ObjectId-vs-string overload pairs).
+- **Upgrade edge-of-deck and bridge-CL reference geometry from polylines to true C3D Alignments** when curved-girder workflows need station/offset queries (e.g. `alignment.PointLocation` along the deck CL). Phase 1 used polylines on `BRIDGE-NOPLOT` to sidestep a pythonnet 3 overload-resolution issue with `Alignment.Create`; the workaround is documented in `CLAUDE.md` (`.Overloads[T...]` for ObjectId-vs-string overload pairs).
 
 **Multi-span deliverables:**
 - Multiple spans with intermediate pier stations and individual skew angles
@@ -426,7 +426,7 @@ Rationale: implicit "lowest-of-corners" sampling pushes the entire footing deepe
 
 ### Phase 3: Drawing Production & Corridor Integration (Weeks 29–36)
 
-**Goal:** Automate drawing production and optionally integrate C3D corridor for deck/barriers.
+**Goal:** Automate drawing production and optionally integrate C3D corridors for deck/barriers.
 
 **Drawing production deliverables (formerly Phase 4):**
 - Elevation/dimension tables as Civil 3D table objects or AutoCAD tables
@@ -479,13 +479,13 @@ Rationale: implicit "lowest-of-corners" sampling pushes the entire footing deepe
 
 ### AISC Shape Database
 
-Embed a lookup table of standard W-shapes (W10–W44 series) with dimensions: depth, web thickness, flange width, flange thickness, weight per foot, moment of inertia, section modulus. Source: AISC Steel Construction Manual, 16th Edition (publicly available dimension tables). This avoids requiring the user to manually input dimensions for standard shapes.
+Embedded lookup table of standard W-shapes (W10-W44 series) with dimensions: depth, web thickness, flange width, flange thickness, weight per foot, moment of inertia, section modulus. Source: AISC Steel Construction Manual, 16th Edition (publicly available dimension tables). This means users don't need to manually input dimensions for standard shapes.
 
 Format: `data/aisc_w_shapes.json` — a dict keyed by designation (e.g., `"W36X150"`) with numeric fields. Loadable on macOS for unit testing (no C3D dependency).
 
 ### Units & Metric Support
 
-**Source data is stored in AISC's native units (inches, lb/ft).** This keeps the JSON identical to AISC's published values, making manual spot-checks against the printed Manual trivial. The JSON declares its units explicitly via a top-level `"units"` field (e.g., `"imperial_inches"`).
+**Source data is stored in AISC's native units (inches, lb/ft).** This keeps the JSON identical to AISC's published values, so spot-checks against the printed Manual are straightforward. The JSON declares its units via a top-level `"units"` field (e.g., `"imperial_inches"`).
 
 **Civil 3D bridge drawings in the US are typically in decimal feet.** Conversion happens at the geometry boundary — `src/units.py` provides pure-logic helpers (`in_to_ft`, `ft_to_in`, etc.) that the geometry-generation layer calls just before constructing swept-solid profiles. This single conversion point prevents drift from repeated conversions and keeps the data file canonical.
 
