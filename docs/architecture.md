@@ -115,7 +115,7 @@ Inside the transaction, the sequence is:
 11. **Commit** the transaction (line 203)
 12. **Format text report** for the Watch node (line 205)
 
-Note that `bridge_lines.py` (the old BRIDGE-NOPLOT EDGE-L, EDGE-R, CL polylines) is no longer called by the orchestrator. The BRIDGE-2D-DECK polygon replaces all three. The module is retained in the repo but unused.
+`bridge_lines.py` (the old BRIDGE-NOPLOT EDGE-L, EDGE-R, CL polylines) is no longer called. The BRIDGE-2D-DECK polygon replaces all three. Module is still in the repo but unused.
 
 ### (3) The Building Blocks
 
@@ -368,7 +368,7 @@ Civil 3D API wrapper. Main functions:
 - `point_on_skewed_bearing(alignment, station, skew_deg, perp_offset)` -> `(x, y)` -- computes the XY of a point on a skewed bearing line at a given perpendicular offset from the alignment
 - `alignment_entity_ranges(alignment, start_sta, end_sta)` -> list of `(entity_type, start_sta, end_sta, radius)` tuples -- **added in Phase 2.1**, walks `alignment_obj.Entities` and recurses into composites (e.g. `SpiralCurveSpiral`). Falls back to numerical curvature detection (sampling `direction_at_station`) if the entity walk fails, so the build never crashes on unsupported alignment shapes.
 
-The entity walk surfaced two pythonnet quirks (documented in `CLAUDE.md`): `AlignmentSubEntity` uses `SubEntityType` (not `EntityType`), and `AlignmentSubEntityType` enum values may stringify as integers (`"257"` for Tangent, `"258"` for Curve, `"259"` for Spiral).
+The entity walk exposed two pythonnet quirks (documented in `CLAUDE.md`): `AlignmentSubEntity` uses `SubEntityType` (not `EntityType`), and `AlignmentSubEntityType` enum values may stringify as integers (`"257"` for Tangent, `"258"` for Curve, `"259"` for Spiral).
 
 #### `src/xdata.py` -- Object Identity Tags
 
@@ -529,11 +529,11 @@ The fix is Inventor-style: **a single editable sketch entity drives the solid**.
                              = final deck solid
 ```
 
-The polygon is the single source of truth. If a designer grip-edits a vertex, the polygon is `preserved` and the deck solid follows on the next run.
+The polygon is the single source of truth. Grip-edit a vertex, and the deck solid follows on the next run.
 
 ### IDisposable Cleanup
 
-AutoCAD .NET objects (`Polyline`, `Region`, `Line`, `Solid3d`, `DBObjectCollection`) are all IDisposable. Per the pythonnet 3 quirk documented in `CLAUDE.md`, `with` statements misroute `__exit__` during exception unwinding. All geometry modules use explicit `try / finally` with `.Dispose()` calls instead.
+AutoCAD .NET objects (`Polyline`, `Region`, `Line`, `Solid3d`, `DBObjectCollection`) are all IDisposable. Because of the pythonnet 3 `__exit__` mis-binding (see `CLAUDE.md`), `with` statements break during exception unwinding. All geometry modules use explicit `try / finally` with `.Dispose()` instead.
 
 ## Current State
 

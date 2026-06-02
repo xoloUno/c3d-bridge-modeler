@@ -487,21 +487,21 @@ Format: `data/aisc_w_shapes.json` — a dict keyed by designation (e.g., `"W36X1
 
 **Source data is stored in AISC's native units (inches, lb/ft).** This keeps the JSON identical to AISC's published values, so spot-checks against the printed Manual are straightforward. The JSON declares its units via a top-level `"units"` field (e.g., `"imperial_inches"`).
 
-**Civil 3D bridge drawings in the US are typically in decimal feet.** Conversion happens at the geometry boundary — `src/units.py` provides pure-logic helpers (`in_to_ft`, `ft_to_in`, etc.) that the geometry-generation layer calls just before constructing swept-solid profiles. This single conversion point prevents drift from repeated conversions and keeps the data file canonical.
+**Civil 3D bridge drawings in the US are typically in decimal feet.** Conversion happens at the geometry boundary -- `src/units.py` has pure-logic helpers (`in_to_ft`, `ft_to_in`, etc.) that the geometry layer calls just before building swept-solid profiles. A single conversion point prevents drift from repeated conversions and keeps the data file canonical.
 
-**Metric (Canadian) projects** use CISC tables — same I-shape geometry, dimensioned in mm with weights in kg/m. Phase 1 ships Imperial only. The schema reserves a slot for a parallel `data/cisc_w_shapes_metric.json` and a corresponding `"drawing_units"` field on params. Full metric support is a Phase 4 deliverable; the design now ensures it's a no-breaking-change addition later.
+**Metric (Canadian) projects** use CISC tables -- same I-shape geometry, dimensioned in mm with weights in kg/m. Phase 1 ships Imperial only. The schema reserves a slot for a parallel `data/cisc_w_shapes_metric.json` and a corresponding `"drawing_units"` field on params. Full metric support is Phase 4; the schema is designed so adding it won't break anything.
 
-**Plate girders** are project-specific welded sections, not standard shapes — they are parameterized directly in JSON (web/flange dimensions per girder) rather than looked up. The Phase 4 parametric cross-section editor will unify the input model for both rolled and plate sections.
+**Plate girders** are project-specific welded sections, not standard shapes -- parameterized directly in JSON (web/flange dimensions per girder) rather than looked up. The Phase 4 parametric cross-section editor will unify the input model for both rolled and plate sections.
 
 ### Skeleton Creation via Sample Line API
 
-The tool creates skeleton geometry using Civil 3D's Sample Line API (`SampleLine`, `SampleLineGroup`):
+Skeleton geometry is created via Civil 3D's Sample Line API (`SampleLine`, `SampleLineGroup`):
 
 1. **Create Sample Line Group** on the bridge alignment: `SampleLineGroup.Create(alignmentId, groupName)`
 2. **Create Sample Lines** at each support station with skew angle. Sample line properties: station position, length (deck width + overhang), angle (perpendicular + skew offset)
-3. **Read Sample Lines on update**: iterate `SampleLineGroup.GetSampleLineIds()`, read each line's current station/angle — the designer may have moved them between runs
+3. **Read Sample Lines on update**: iterate `SampleLineGroup.GetSampleLineIds()`, read each line's current station/angle -- the designer may have moved them between runs
 
-Sample lines on `BRIDGE-SKELETON-SUPPORT` layer. The group doubles as the section-cut source for drawing production viewports.
+Sample lines go on `BRIDGE-SKELETON-SUPPORT`. The group doubles as the section-cut source for drawing production viewports.
 
 ### Sub-Alignment Creation
 
