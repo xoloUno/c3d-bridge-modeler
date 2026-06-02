@@ -79,7 +79,7 @@ UPDATE (after designer edits):
 **Source of truth split:**
 - **Sample lines in the drawing** are authoritative for support locations (station, skew). The designer can move them between runs.
 - **JSON params** are authoritative for component specifications (girder type, dimensions, haunch depth, etc.).
-- **Sub-alignments, solids, and surfaces** are derived — always regenerated from the skeleton + params.
+- **Sub-alignments, solids, and surfaces** are derived -- always regenerated from the skeleton + params.
 - No automatic write-back from drawing to JSON. An explicit "Export Params" command captures current state if needed.
 
 ### Drawing & Xref Workflow
@@ -123,11 +123,11 @@ Each solid is tagged with IFC Property Sets at creation time, so IFC 4.3 export 
 |---|---|---|
 | Deck | `IfcSlab` | BASESLAB |
 | Girder | `IfcBeam` | GIRDER |
-| Haunch | `IfcBuildingElementProxy` | — |
+| Haunch | `IfcBuildingElementProxy` | -- |
 | Pier Cap | `IfcBeam` | BEAM |
 | Column | `IfcColumn` | COLUMN |
-| Footing | `IfcFooting` | — |
-| Abutment | `IfcAbutment` | — |
+| Footing | `IfcFooting` | -- |
+| Abutment | `IfcAbutment` | -- |
 
 ### Template Drawing
 
@@ -337,7 +337,7 @@ where `top_of_cap` is derived from deck profile/cross slope minus superstructure
 
 ### Phase 0: Foundation & Proof of Concept (Weeks 1–4)
 
-**Goal:** Prove the core pipeline works — read Civil 3D data, generate solids, display correctly in viewports.
+**Goal:** Prove the core pipeline works -- read Civil 3D data, generate solids, display correctly in viewports.
 
 **Deliverables:**
 - Dynamo graph that reads a single alignment + profile via data shortcuts
@@ -349,7 +349,7 @@ where `top_of_cap` is derived from deck profile/cross slope minus superstructure
 
 **Why this first:** Validates the I/O pipeline before investing in geometry. If xref display or Dynamo-to-Civil3D solid generation breaks, we find out in week 1, not month 3.
 
-### Phase 1: Superstructure — Straight & Flared Steel Girder Bridge (Weeks 5–12)
+### Phase 1: Superstructure -- Straight & Flared Steel Girder Bridge (Weeks 5–12)
 
 **Goal:** Model a complete single-span steel girder superstructure on a straight alignment, with flared bridges (variable girder spacing) and skewed supports. Establish the skeleton architecture and two-mode workflow.
 
@@ -357,7 +357,7 @@ where `top_of_cap` is derived from deck profile/cross slope minus superstructure
 - AISC W-shape lookup table (`data/aisc_w_shapes.json`, W10–W44 series) with depth, web thickness, flange width/thickness, weight per foot
 - W-shape girder generation: swept I-shape cross-section (single closed polyline profile → Region → `CreateSweptSolid`) along girder sub-alignments with `Bank = false` (girders stay plumb on curves)
 - Plate girder generation from custom dimensions (same sweep approach, user-specified flange/web dims)
-- Deck solid with configurable width, depth, cross slope, crown offset — lofted between cross-section profiles at bearing lines
+- Deck solid with configurable width, depth, cross slope, crown offset -- lofted between cross-section profiles at bearing lines
 - Haunch solids per girder: parallelogram cross-section (bottom = horizontal on flange, top = sloped matching deck bottom). Width = top flange width (automatic from AISC lookup). Depth = user input at web CL; varies across flange due to cross-slope. Chamfered top corners deferred to later update.
 - Deck skew: `Solid3d.Slice(Plane)` to trim deck ends at skew angles
 - Top-of-deck C3D TIN surface from sampled deck top face points
@@ -376,18 +376,18 @@ where `top_of_cap` is derived from deck profile/cross slope minus superstructure
 - IFC Property Set classification on each solid at creation time
 - Template drawing import (layers, styles, PropSet definitions)
 
-**Deferred from Phase 1:** substructure (piers, abutments, foundations — see Phase 1b), cross-frames/diaphragms, corridor integration for deck, haunch chamfer, camber, bearing devices/pedestals.
+**Deferred from Phase 1:** substructure (piers, abutments, foundations -- see Phase 1b), cross-frames/diaphragms, corridor integration for deck, haunch chamfer, camber, bearing devices/pedestals.
 
 **Input method:** JSON parameter file + Dynamo Player (two input nodes: `repo_root`, `params_path`)
 
-### Phase 1b: Substructure — Piers, Abutments, Foundations (Weeks 13–18)
+### Phase 1b: Substructure -- Piers, Abutments, Foundations (Weeks 13–18)
 
 **Goal:** Complete the single-span bridge with substructure elements positioned by the elevation chain.
 
 **Deliverables:**
 - Single-column or multi-column pier with concrete rectangular cap
 - Seat-type abutment with backwall and optional wingwalls
-- Foundation solids (drilled shaft or spread footing — simplest two types)
+- Foundation solids (drilled shaft or spread footing -- simplest two types)
 - Column split at EG surface for above/below-grade layer assignment (`Solid3d.Slice` at EG plane)
 - Bearing devices and pedestals (simple rectangular blocks)
 - Elevation table output (CSV/text; matches manual calculation within 0.01')
@@ -454,7 +454,7 @@ Rationale: implicit "lowest-of-corners" sampling pushes the entire footing deepe
 - Cast-in-place box girder type (single-cell, multi-cell)
 - Bearing device types (elastomeric, pot, disc) beyond simple rectangular blocks
 - Barrier/parapet seat geometry on deck edges
-- Export to IFC 4.3 for coordination (leveraging Property Sets already attached in Phase 1)
+- Export to IFC 4.3 for coordination (using Property Sets already attached in Phase 1)
 - Dynamo Player UI with grouped parameter panels
 - Parametric cross-section editor: draw shape once, assign variable dimensions, edit via parameter table (inspired by OBM deck templates, Revit parametric families, Inventor parameter workflow)
 - Documentation and tutorial
@@ -481,7 +481,7 @@ Rationale: implicit "lowest-of-corners" sampling pushes the entire footing deepe
 
 Embedded lookup table of standard W-shapes (W10-W44 series) with dimensions: depth, web thickness, flange width, flange thickness, weight per foot, moment of inertia, section modulus. Source: AISC Steel Construction Manual, 16th Edition (publicly available dimension tables). This means users don't need to manually input dimensions for standard shapes.
 
-Format: `data/aisc_w_shapes.json` — a dict keyed by designation (e.g., `"W36X150"`) with numeric fields. Loadable on macOS for unit testing (no C3D dependency).
+Format: `data/aisc_w_shapes.json` -- a dict keyed by designation (e.g., `"W36X150"`) with numeric fields. Loadable on macOS for unit testing (no C3D dependency).
 
 ### Units & Metric Support
 
@@ -603,7 +603,7 @@ Girders and haunches are generated using `Solid3d.CreateSweptSolid()`:
 3. Sweep along the girder sub-alignment path
 
 **Sweep path:**
-- Must be an `Arc` or `Spline` entity — `Polyline` paths fail in `CreateSweptSolid`
+- Must be an `Arc` or `Spline` entity -- `Polyline` paths fail in `CreateSweptSolid`
 - For Phase 1 (straight): use a `Line` entity (straight sweep = extrusion along path)
 - For Phase 2 (curved): convert sampled alignment points to a `Spline`, or use `Arc` for constant-radius curves
 
@@ -650,7 +650,7 @@ The template drawing ships with standard IFC PropSet definitions. No manual obje
 
 ### Solid Generation Strategy
 
-- **Deck:** Lofted solid between cross-section profiles at each bearing line and at intermediate points (for tapering/curving). Cross-section = wide thin rectangle with cross slope applied. Ends trimmed at skew angles via `Solid3d.Slice(Plane)`.
+- **Deck:** Lofted solid between cross-section profiles at each bearing line and at intermediate points (for tapering/curving). Cross-section = wide thin rectangle with cross slope. Ends trimmed at skew angles via `Solid3d.Slice(Plane)`.
 - **Girders:** `CreateSweptSolid` along girder sub-alignment path. Cross-section = I-shape (from AISC lookup or custom plate dims). `Bank = false`.
 - **Haunches:** `CreateSweptSolid` matching girder path. Cross-section = parallelogram (bottom = horizontal on flange, top = sloped matching deck bottom). Width = top flange width.
 - **Pier caps:** Extruded solid along the cap length (perpendicular to bridge, adjusted for skew). Cross-section = rectangle or tapered rectangle.
@@ -667,7 +667,7 @@ For each column, abutment stem, and wingwall solid:
 3. Place the above-grade portion on the standard layer
 4. Place the below-grade portion on the `-BELOW` layer (DASHED linetype)
 
-Footings (pier and abutment) are exclusively below grade and do not need splitting — they are placed directly on their respective `FTG` layers with DASHED linetype.
+Footings (pier and abutment) are exclusively below grade and do not need splitting -- they are placed directly on their respective `FTG` layers with DASHED linetype.
 
 ### Two-Mode Workflow Implementation
 
@@ -703,8 +703,8 @@ The mode is determined automatically: if a Sample Line Group for this bridge alr
 
 ### Re-Run Safety
 
-- Skeleton elements (sample lines, sub-alignments) are **preserved** across update runs — the designer's edits are retained
-- Derived elements (solids, surface) are **deleted and regenerated** — always reflect current inputs
+- Skeleton elements (sample lines, sub-alignments) are **preserved** across update runs -- the designer's edits are retained
+- Derived elements (solids, surface) are **deleted and regenerated** -- always reflect current inputs
 - Future optimization: tag each solid with xdata linking it to its parameter source, and only regenerate changed elements (Phase 4+)
 
 ---
@@ -714,7 +714,7 @@ The mode is determined automatically: if a Sample Line Group for this bridge alr
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Dynamo `Solid3d` creation is slow for complex bridges (50+ solids) | Script takes 30+ seconds to run | Acceptable for re-generation workflow; optimize with direct API calls in Python if needed |
-| AutoCAD Hidden visual style doesn't handle complex occlusion well | Drawing production requires manual cleanup | Test early (Phase 0 — verified OK); fall back to layer-based dashed lines if needed |
+| AutoCAD Hidden visual style doesn't handle complex occlusion well | Drawing production requires manual cleanup | Test early (Phase 0 -- verified OK); fall back to layer-based dashed lines if needed |
 | Civil 3D alignment API doesn't expose superelevation data in Dynamo | Can't automate superelevation-following mode | Query via Python `.NET` API directly; superelevation is available in `Alignment.GetSuperElevation()` |
 | Curved girder swept solids are geometrically complex | Loft/sweep failures on tight radii | `FOLLOW_ALIGNMENT` mode is simplest (uses alignment API offsets); `CURVED_RADIUS` mode uses segmented straight approximation (chorded at small intervals) as fallback |
 | `CreateSweptSolid` path type restrictions | Polyline paths fail; only Arc/Spline/Line accepted | Use Line for straight (Phase 1), Spline for curved (Phase 2); fallback = segmented extrusion |
@@ -729,25 +729,25 @@ The mode is determined automatically: if a Sample Line Group for this bridge alr
 
 ## Success Criteria
 
-### Phase 0 (Proof of Concept) — COMPLETE 2026-05-06
+### Phase 0 (Proof of Concept) -- COMPLETE 2026-05-06
 - [x] Dynamo script reads alignment and profile from data shortcuts
 - [x] Generates 3D solid deck and two pier placeholders
 - [x] Solids display correctly in Hidden visual style viewport
 - [x] Xref workflow verified: bridge drawing xref'd into separate sheet drawing
 
-### Phase 1 (Superstructure) — COMPLETE 2026-05-19
+### Phase 1 (Superstructure) -- COMPLETE 2026-05-19
 - [x] Complete superstructure (deck, girders, haunches) generated from JSON params
 - [x] Sample line skeleton created at support stations with correct skew angles
-- [x] ~~Girder sub-alignments created~~ Girders sweep along 3D Line paths between bearings (sub-alignments replaced by direct sweep — see `docs/architecture.md`)
+- [x] ~~Girder sub-alignments created~~ Girders sweep along 3D Line paths between bearings (sub-alignments replaced by direct sweep -- see `docs/architecture.md`)
 - [x] ~~Edge-of-deck sub-alignments~~ Replaced by BRIDGE-2D-DECK polygon (designer-editable, DIMRADIUS works on arc segments)
-- [ ] Top-of-deck C3D surface created with spot elevation labels working — deferred
-- [ ] IFC Property Sets attached to all solids — deferred (template_dwg prerequisite)
+- [ ] Top-of-deck C3D surface created with spot elevation labels working -- deferred
+- [ ] IFC Property Sets attached to all solids -- deferred (template_dwg prerequisite)
 - [x] Flared bridge (different spacing at each end) generates correctly with linearly interpolated girder positions
 - [x] ~~Skewed deck ends via Solid3d.Slice~~ Skewed ends handled by polygon-trim boolean intersect (no Slice needed)
 - [x] Two-mode workflow: Create from JSON, Update reading sample line positions + polygon edits
 - [x] Elevation chain output matches manual calculation within 0.01'
 - [x] Re-run preserves skeleton, regenerates solids
-- [ ] Template drawing imports layers/styles/PropSets on first run — deferred
+- [ ] Template drawing imports layers/styles/PropSets on first run -- deferred
 
 ### Phase 1b (Substructure)
 - [ ] Single-column and multi-column piers generated with correct dimensions
@@ -756,17 +756,17 @@ The mode is determined automatically: if a Sample Line Group for this bridge alr
 - [ ] Bearing devices and pedestals placed at correct elevation chain positions
 - [ ] Digital Applications team member validates on a real project structure
 
-### Phase 2 (Curved Alignment + Polygon-Driven Deck) — COMPLETE 2026-05-20
+### Phase 2 (Curved Alignment + Polygon-Driven Deck) -- COMPLETE 2026-05-20
 - [x] Curved horizontal alignment support (density-driven path sampling, arc-bulge deck polygon)
 - [x] Deck plan polygon as editable skeleton entity (BRIDGE-2D-DECK, grip-edit roundtrip verified)
 - [x] Skewed supports produce correct geometry on curves
 - [x] Tapering/fanning deck width on curves (tangent-constrained arcs via 5-way gating)
 - [x] Shifting deck CL (station-varying `deck_cl_offset_from_alignment`, gated on no crown kink)
 - [x] Alignment entity walk with composite recursion + curvature-detection fallback
-- [ ] Multi-span — deferred to Phase 3 (schema supports it; orchestrator loop ready)
-- [ ] Curved/chorded girders — deferred to Phase 3 (girders remain straight chords)
-- [ ] Super-elevation — deferred to Phase 3 (requires multi-section loft)
-- [ ] Cross-frames/diaphragms — deferred
+- [ ] Multi-span -- deferred to Phase 3 (schema supports it; orchestrator loop ready)
+- [ ] Curved/chorded girders -- deferred to Phase 3 (girders remain straight chords)
+- [ ] Super-elevation -- deferred to Phase 3 (requires multi-section loft)
+- [ ] Cross-frames/diaphragms -- deferred
 
 ### Phase 3 (Drawing Production & Corridor)
 - [ ] Elevation/quantity tables auto-generated
@@ -788,7 +788,7 @@ At 2–5 hours/week evening development time:
 | Phase 3 (Drawing Production) | 8 | 16–40 hrs | Months 9–12 |
 | Phase 4 (Advanced & App Store) | 12 | 24–60 hrs | Months 12–16 |
 
-**Phase 0 + 1 + 1b produce a usable tool for simple bridges.** This is the MVP — a single-span, straight, steel girder bridge with piers and abutments. If this is all you ever build, it still saves hours per bridge.
+**Phase 0 + 1 + 1b produce a usable tool for simple bridges.** This is the MVP: a single-span, straight, steel girder bridge with piers and abutments. Even if this is all you ever build, it saves hours per bridge.
 
 ---
 
