@@ -1,37 +1,46 @@
-# One-Click Bridge Modeler for Civil 3D
+# Bridge Modeler for Civil 3D
 
 ## Project Scope & Development Plan
 
 **Author:** Erik Jimenez / xolo.uno  
 **Platform:** Dynamo for Civil 3D (Python nodes) → future C# plugin  
-**Date:** May 2026  
-**Status:** Scoping
+**Date:** May 2026 (originally scoped); June 2026 (current)  
+**Status:** Phase 2 complete. Superstructure (deck, girders, haunches) verified on curved + skewed bridges. Substructure and multi-span are next.
+
+**Vision:** A parametric bridge wizard for Civil 3D -- the equivalent of Bentley's OpenBridge Modeler on the MicroStation platform. Reads alignment, profile, surface, and tabular inputs; generates 3D bridge models as AutoCAD solids with an editable skeleton and a single-source-of-truth xref workflow for drawing production.
 
 ---
 
 ## Problem Statement
 
-Autodesk has no native bridge modeling tool for Civil 3D. The current Autodesk-recommended workflow requires five separate products (InfraWorks, Inventor, Civil 3D, Revit, Structural Bridge Design) to produce a single bridge model. In practice, the InfraWorks-based workflow produces 3D models that must be exploded into dumb linework for drawing production — destroying the link between 3D model and 2D deliverables, creating design drift risk, and adding manual rework at every design iteration.
+Autodesk has no native bridge modeling tool for Civil 3D. The current Autodesk-recommended workflow requires five separate products (InfraWorks, Inventor, Civil 3D, Revit, Structural Bridge Design) to produce a single bridge model. In practice, the InfraWorks workflow produces 3D models that must be exploded into dumb linework for drawing production. This destroys the link between 3D model and 2D deliverables, creates design drift, and adds manual rework at every iteration.
 
 The Civil 3D App Store has 827+ plugins and zero dedicated bridge modeling tools. SOFiSTiK's Bridge Modeler exists for Revit but not Civil 3D. Bentley's OpenBridge Modeler is the only real competitor, and it lives outside the Autodesk ecosystem entirely.
 
-**Goal:** Build a Dynamo-based parametric bridge modeler that generates 3D AutoCAD solids directly in Civil 3D from alignment, profile, surface, and tabular inputs — enabling a single-source-of-truth workflow where sheets xref the bridge drawing and update automatically when the model is regenerated.
+**Goal:** Build the bridge wizard described above -- parametric 3D bridge solids generated directly in Civil 3D, so sheets can xref the bridge drawing and update automatically when the model is regenerated.
 
 ---
 
 ## Architecture
 
+> **Note:** For the current implementation details (module dependency graph,
+> geometry construction techniques, data-flow diagrams, and test architecture),
+> see [docs/architecture.md](docs/architecture.md). The sections below document
+> the original design intent; some details have evolved during implementation
+> (e.g., deck construction uses sweep + boolean intersect rather than lofting;
+> edge-of-deck polylines replaced by the BRIDGE-2D-DECK polygon).
+
 ### Why AutoCAD 3D Solids (Not "Smart" Civil 3D Objects)
 
-Civil 3D has no native `Bridge` API class. The "Bridges" node in Prospector only receives imported InfraWorks models — you cannot author bridge objects natively. Therefore the tool generates **AutoCAD `Solid3d` objects** organized on a disciplined layer structure, augmented by Civil 3D-native reference geometry (sample lines, alignments, profiles, surfaces).
+Civil 3D has no native `Bridge` API class. The "Bridges" node in Prospector only receives imported InfraWorks models -- you can't author bridge objects natively. So the tool generates **AutoCAD `Solid3d` objects** on a disciplined layer structure, augmented by Civil 3D-native reference geometry (sample lines, alignments, profiles, surfaces).
 
-The "intelligence" lives in the Dynamo script and its parameter inputs — not in the geometry itself. To update the bridge, the user changes inputs and/or moves skeleton geometry and re-runs the script. Solids are deleted and regenerated; skeleton elements are read or updated.
+The intelligence lives in the Dynamo script and its parameter inputs, not in the geometry. To update the bridge, the user changes inputs and/or moves skeleton geometry and re-runs the script. Solids are deleted and regenerated; skeleton elements are read or updated.
 
 ### Skeleton Architecture (Inspired by OpenBridge Modeler)
 
-The tool creates a **skeleton** of C3D-native reference geometry before generating solids. This skeleton is visible, verifiable, snappable, and editable by the designer.
+The tool creates a **skeleton** of C3D-native reference geometry before generating solids. The skeleton is visible, snappable, and editable.
 
-**Support Lines** are **C3D Sample Lines** placed at each pier/abutment station on the bridge alignment. They serve dual purpose: (1) defining the bridge skeleton for solid generation, and (2) providing section cut locations for drawing production. Sample lines can be perpendicular or skewed.
+**Support Lines** are **C3D Sample Lines** placed at each pier/abutment station on the bridge alignment. They do double duty: (1) defining the bridge skeleton for solid generation, and (2) providing section cut locations for drawing production. Sample lines can be perpendicular or skewed.
 
 **Bearing Lines** are parallel to their respective support line, offset along the alignment direction. A support can have multiple bearing lines:
 - Intermediate piers: one bearing line on each side of the support line (e.g., ±1.0' from pier CL)
@@ -40,14 +49,14 @@ The tool creates a **skeleton** of C3D-native reference geometry before generati
 
 Girder span length is measured **bearing-line-to-bearing-line**, not support-line-to-support-line.
 
-**Girder Sub-Alignments** are C3D Alignment + Profile pairs created by the tool for each girder. The horizontal alignment defines the girder's plan path (straight line for tangent bridges, arc for curved). The profile defines the top-of-flange elevation along the girder's length (computed from the deck bottom minus haunch depth via the elevation chain). These sub-alignments serve three purposes:
+**Girder Sub-Alignments** are C3D Alignment + Profile pairs created by the tool for each girder. The horizontal alignment defines the girder's plan path (straight line for tangent bridges, arc for curved). The profile defines the top-of-flange elevation along the girder's length (deck bottom minus haunch depth via the elevation chain). These sub-alignments serve three purposes:
 1. **Sweep path** for generating girder and haunch Solid3d objects
-2. **Dimensionable reference** — the alignment IS a true arc, so DIMRADIUS works for plan-view radius dimensioning
-3. **Queryable path** — downstream code (bearing placement, diaphragm connection points) queries the alignment/profile for positions
+2. **Dimensionable reference** -- the alignment IS a true arc, so DIMRADIUS works for plan-view radius dimensioning
+3. **Queryable path** -- downstream code (bearing placement, diaphragm connection points) queries the alignment/profile for positions
 
-**Edge-of-Deck Reference Lines** define the deck width envelope. For Phase 1 these are AutoCAD Polylines (NOT true C3D Alignments) on a `BRIDGE-NOPLOT` layer that is locked + non-plotting by default — snappable for plan-production dimensioning, locked against accidental edits, and out of plotted output (the deck solid's projected edge handles plot visibility). Two are always created: `BRIDGE-EDGE-L` and `BRIDGE-EDGE-R`. Phase 2 may upgrade these to true C3D Alignments if curved-girder workflows need station/offset queries; the path back is documented in `CLAUDE.md` (PythonNet 3 `.Overloads[]` quirk for `Alignment.Create`).
+**Edge-of-Deck Reference Lines** define the deck width envelope. For Phase 1 these are AutoCAD Polylines (NOT true C3D Alignments) on a `BRIDGE-NOPLOT` layer -- locked + non-plotting by default. Snappable for plan-production dimensioning, locked against accidental edits, and out of plotted output (the deck solid's projected edge handles plot visibility). Two are always created: `BRIDGE-EDGE-L` and `BRIDGE-EDGE-R`. Phase 2 may upgrade these to true C3D Alignments if curved-girder workflows need station/offset queries; the path back is documented in `CLAUDE.md` (PythonNet 3 `.Overloads[]` quirk for `Alignment.Create`).
 
-**Bridge Centerline Reference Line** is created **only when** `deck_cl_offset_from_alignment` is **not** the constant zero profile. When the roadway alignment runs through the deck centerline, the existing alignment already serves as the bridge CL — no extra polyline needed. When the deck CL is offset from alignment (widened bridges, secondary roads tied to a primary alignment, asymmetric structures), `BRIDGE-CL` is created so plan-production dimensions can target the deck centerline directly. Same `BRIDGE-NOPLOT` layer as the edges.
+**Bridge Centerline Reference Line** is created **only when** `deck_cl_offset_from_alignment` is **not** zero. When the alignment runs through the deck centerline, the existing alignment already works as the bridge CL -- no extra polyline needed. When the deck CL is offset (widened bridges, secondary roads tied to a primary alignment, asymmetric structures), `BRIDGE-CL` is created so plan-production dimensions can target the deck centerline directly. Same `BRIDGE-NOPLOT` layer as the edges.
 
 All skeleton elements are placed on `BRIDGE-SKELETON-*` (sample lines) or `BRIDGE-NOPLOT` (reference polylines) layers and can be frozen / customized for drawing production.
 
@@ -99,8 +108,8 @@ UPDATE (after designer edits):
 
 ### Top-of-Deck Surface
 
-After generating the deck solid, the tool creates a C3D TIN surface (`BRG01-DECK-TOP`) from sampled points on the deck top face. This surface enables:
-- Spot elevation annotations using standard C3D surface labels
+After generating the deck solid, the tool creates a C3D TIN surface (`BRG01-DECK-TOP`) from sampled points on the deck top face. This surface allows:
+- Spot elevation annotations with standard C3D surface labels
 - Surface measurement tools (elevation difference, slope arrows)
 - Sharing with the roadway team for composite surface assembly and grading ties
 
@@ -108,7 +117,7 @@ Layer: `BRIDGE-DECK-SURFACE` (frozen by default to avoid visual clutter).
 
 ### IFC Classification
 
-Each solid is tagged with IFC Property Sets at creation time, enabling correct classification on IFC 4.3 export without manual mapping:
+Each solid is tagged with IFC Property Sets at creation time, so IFC 4.3 export classifies correctly without manual mapping:
 
 | Element | IFC Entity | PredefinedType |
 |---|---|---|
@@ -122,7 +131,7 @@ Each solid is tagged with IFC Property Sets at creation time, enabling correct c
 
 ### Template Drawing
 
-A template `.dwg` ships with the tool containing standard definitions:
+A template `.dwg` ships with the tool containing:
 - `BRIDGE-*` layer definitions with standard colors and linetypes
 - Alignment/profile/sample line styles for skeleton elements
 - Property Set Definitions for IFC classification
@@ -133,7 +142,7 @@ A template `.dwg` ships with the tool containing standard definitions:
 
 ### Layer Structure
 
-All bridge objects are placed on component-level layers (unnumbered). Individual element identity (girder number, pier ID, span, etc.) is stored as **xdata tags** on each solid, queryable via selection filters or scripts when per-element isolation is needed. This keeps the layer list clean regardless of bridge size.
+All bridge objects go on component-level layers (unnumbered). Individual element identity (girder number, pier ID, span, etc.) is stored as **xdata tags** on each solid, queryable via selection filters or scripts when per-element isolation is needed. The layer list stays clean regardless of bridge size.
 
 ```
 Skeleton layers (reference geometry):
@@ -170,7 +179,7 @@ Each solid carries xdata with its identity metadata, e.g.:
 {"pier_id": "PIER-2", "column": 3, "span": "SPAN-1", "girder": 5}
 ```
 
-This enables per-element selection when needed (phased erection drawings, section view isolation, quantity extraction by element) without inflating the layer list.
+This allows per-element selection when needed (phased erection drawings, section view isolation, quantity extraction by element) without inflating the layer list.
 
 ---
 
@@ -208,9 +217,9 @@ Each span is defined between two support points (piers, abutments, or straddle b
 
 ### Superstructure Definition (per span)
 
-Deck width is specified **perpendicular to alignment** (the engineer's intended dimension). Girder spacings are specified **along the bearing line** (matching what's labeled on plans). For skewed supports the bearing-line distance is `perpendicular_deck_width / cos(skew)`. The tool derives the missing edge spacing so the spacing arrays sum exactly to the bearing-line distance.
+Deck width is specified **perpendicular to alignment** (the engineer's intended dimension). Girder spacings are specified **along the bearing line** (matching plan labels). For skewed supports the bearing-line distance is `perpendicular_deck_width / cos(skew)`. The tool derives the missing edge spacing so the spacing arrays sum exactly to the bearing-line distance.
 
-For a flared bridge, the perpendicular width and spacings differ at each end; the tool linearly interpolates positions between them to construct girder sub-alignments.
+For a flared bridge, width and spacings differ at each end; the tool linearly interpolates positions between them to build girder sub-alignments.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -256,7 +265,7 @@ For a flared bridge, the perpendicular width and spacings differ at each end; th
 
 ### Support Definition (per pier / abutment / straddle bent)
 
-Each support is defined independently, allowing mixed types. On initial creation, the tool creates C3D sample lines from these parameters. On subsequent runs, the tool reads current sample line positions from the drawing (the designer may have moved them).
+Each support is defined independently. Mixed types are allowed. On initial creation, the tool creates C3D sample lines from these parameters. On subsequent runs, it reads current sample line positions from the drawing (the designer may have moved them).
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -338,11 +347,11 @@ where `top_of_cap` is derived from deck profile/cross slope minus superstructure
 - Verify: Hidden visual style in viewport shows correct wireframe
 - Verify: xref workflow works (bridge drawing xref'd into sheet)
 
-**Why this first:** This validates the entire I/O pipeline before investing in geometric complexity. If xref display or Dynamo-to-Civil3D solid generation has issues, we discover them in week 1, not month 3.
+**Why this first:** Validates the I/O pipeline before investing in geometry. If xref display or Dynamo-to-Civil3D solid generation breaks, we find out in week 1, not month 3.
 
 ### Phase 1: Superstructure — Straight & Flared Steel Girder Bridge (Weeks 5–12)
 
-**Goal:** Model a complete single-span steel girder superstructure on a straight alignment, with support for flared bridges (variable girder spacing) and skewed supports. Establish the skeleton architecture and two-mode workflow.
+**Goal:** Model a complete single-span steel girder superstructure on a straight alignment, with flared bridges (variable girder spacing) and skewed supports. Establish the skeleton architecture and two-mode workflow.
 
 **Superstructure deliverables:**
 - AISC W-shape lookup table (`data/aisc_w_shapes.json`, W10–W44 series) with depth, web thickness, flange width/thickness, weight per foot
@@ -388,11 +397,11 @@ where `top_of_cap` is derived from deck profile/cross slope minus superstructure
 2. **Validation pass after footing geometry is built:** sample FG at each footing corner (or N perimeter points for non-rectangular footings); warn if any point fails the `min_depth_below_fg` cover requirement.
 3. **User override:** the engineer resolves a corner-check warning by setting `specified_top_of_footing_elevation` deeper. The override always wins in the elevation chain.
 
-Rationale: implicit "lowest-of-corners" sampling pushes the entire footing deeper than usually needed, inflating concrete volume and excavation cost. Engineers want a *check* that surfaces the corner issue so they can decide, not an automatic depth increase.
+Rationale: implicit "lowest-of-corners" sampling pushes the entire footing deeper than usually needed, inflating concrete volume and excavation cost. Engineers want a *check* that flags the corner issue so they can decide, not an automatic depth increase.
 
 ### Phase 2: Curved Geometry & Multi-Span (Weeks 19–28)
 
-**Goal:** Add curved bridge support as a geometry-mode switch, and extend to multi-span bridges.
+**Goal:** Add curved bridge support as a geometry-mode switch and extend to multi-span bridges.
 
 **Curved geometry deliverables:**
 - `FOLLOW_ALIGNMENT` girder mode: each girder sub-alignment is a lateral offset from the main alignment (the alignment API handles the curve math)
@@ -726,19 +735,19 @@ The mode is determined automatically: if a Sample Line Group for this bridge alr
 - [x] Solids display correctly in Hidden visual style viewport
 - [x] Xref workflow verified: bridge drawing xref'd into separate sheet drawing
 
-### Phase 1 (Superstructure)
-- [ ] Complete superstructure (deck, girders, haunches) generated from JSON params
-- [ ] Sample line skeleton created at support stations with correct skew angles
-- [ ] Girder sub-alignments created with correct offsets and elevations
-- [ ] Edge-of-deck sub-alignments created and dimensionable (DIMRADIUS works)
-- [ ] Top-of-deck C3D surface created with spot elevation labels working
-- [ ] IFC Property Sets attached to all solids; IFC export classifies elements correctly
-- [ ] Flared bridge (different spacing at each end) generates correctly with linearly interpolated girder positions
-- [ ] Skewed deck ends generated correctly via Solid3d.Slice
-- [ ] Two-mode workflow: Create from JSON, Update reading sample line positions
-- [ ] Elevation chain output matches manual calculation within 0.01'
-- [ ] Re-run preserves skeleton, regenerates solids
-- [ ] Template drawing imports layers/styles/PropSets on first run
+### Phase 1 (Superstructure) — COMPLETE 2026-05-19
+- [x] Complete superstructure (deck, girders, haunches) generated from JSON params
+- [x] Sample line skeleton created at support stations with correct skew angles
+- [x] ~~Girder sub-alignments created~~ Girders sweep along 3D Line paths between bearings (sub-alignments replaced by direct sweep — see `docs/architecture.md`)
+- [x] ~~Edge-of-deck sub-alignments~~ Replaced by BRIDGE-2D-DECK polygon (designer-editable, DIMRADIUS works on arc segments)
+- [ ] Top-of-deck C3D surface created with spot elevation labels working — deferred
+- [ ] IFC Property Sets attached to all solids — deferred (template_dwg prerequisite)
+- [x] Flared bridge (different spacing at each end) generates correctly with linearly interpolated girder positions
+- [x] ~~Skewed deck ends via Solid3d.Slice~~ Skewed ends handled by polygon-trim boolean intersect (no Slice needed)
+- [x] Two-mode workflow: Create from JSON, Update reading sample line positions + polygon edits
+- [x] Elevation chain output matches manual calculation within 0.01'
+- [x] Re-run preserves skeleton, regenerates solids
+- [ ] Template drawing imports layers/styles/PropSets on first run — deferred
 
 ### Phase 1b (Substructure)
 - [ ] Single-column and multi-column piers generated with correct dimensions
@@ -747,11 +756,17 @@ The mode is determined automatically: if a Sample Line Group for this bridge alr
 - [ ] Bearing devices and pedestals placed at correct elevation chain positions
 - [ ] Digital Applications team member validates on a real project structure
 
-### Phase 2 (Curved & Multi-Span)
-- [ ] 3-span curved bridge with mixed pier types generated correctly
-- [ ] `FOLLOW_ALIGNMENT` mode produces concentric curved girders
-- [ ] Skewed supports produce correct geometry at each pier
-- [ ] Cross-frames/diaphragms generated between girders
+### Phase 2 (Curved Alignment + Polygon-Driven Deck) — COMPLETE 2026-05-20
+- [x] Curved horizontal alignment support (density-driven path sampling, arc-bulge deck polygon)
+- [x] Deck plan polygon as editable skeleton entity (BRIDGE-2D-DECK, grip-edit roundtrip verified)
+- [x] Skewed supports produce correct geometry on curves
+- [x] Tapering/fanning deck width on curves (tangent-constrained arcs via 5-way gating)
+- [x] Shifting deck CL (station-varying `deck_cl_offset_from_alignment`, gated on no crown kink)
+- [x] Alignment entity walk with composite recursion + curvature-detection fallback
+- [ ] Multi-span — deferred to Phase 3 (schema supports it; orchestrator loop ready)
+- [ ] Curved/chorded girders — deferred to Phase 3 (girders remain straight chords)
+- [ ] Super-elevation — deferred to Phase 3 (requires multi-section loft)
+- [ ] Cross-frames/diaphragms — deferred
 
 ### Phase 3 (Drawing Production & Corridor)
 - [ ] Elevation/quantity tables auto-generated

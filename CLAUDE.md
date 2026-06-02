@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-One-Click Bridge Modeler — a Dynamo for Civil 3D tool that generates parametric 3D bridge models as AutoCAD solids from alignment, profile, surface, and tabular inputs.
+Parametric bridge wizard for Autodesk Civil 3D — the OpenBridge Modeler equivalent on the Autodesk platform. Dynamo graph + CPython 3 scripts generate 3D bridge models as AutoCAD solids from alignment, profile, surface, and tabular inputs.
 
 ## Detailed Scope
 
