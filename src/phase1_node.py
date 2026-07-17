@@ -1,21 +1,26 @@
-"""Reference body for the Dynamo Python node in `phase1_bridge.dyn`.
+"""Reference body for the Dynamo Python node in `bridge_wizard.dyn`.
 
 This file is the canonical, version-controlled source for what goes inside
-the .dyn's Python node. Copy its body into the Python node when building or
-rebuilding the graph in Dynamo. The .dyn itself is created in Civil 3D
-(see `MANUAL-TASKS.md`) — fabricating valid Dynamo JSON outside of Dynamo
-is brittle across versions.
+the .dyn's Python node. The committed graph `src/bridge_wizard.dyn` embeds
+this body (docstring stripped, CRLF line endings) and is the Dynamo
+Player-ready tool UI: the Directory/File inputs are marked "Is Input" and
+the report Watch node "Is Output". When editing this file, re-embed the
+body in the graph — either paste it into the Python node in Dynamo, or
+regenerate the `Code` field so the two stay byte-identical. (The graph was
+fabricated from the known-good `phase0_bridge.dyn` serialization rather
+than authored in Dynamo — see MANUAL-TASKS.md for its verification
+checklist; if Dynamo rewrites the file on save, commit Dynamo's version.)
 
 Dynamo node inputs (in order):
-    IN[0]: repo root path  (File Path node pointed at this repository)
+    IN[0]: repo root path  (Directory Path node pointed at this repository)
     IN[1]: params JSON path (File Path node pointed at e.g.
-           test/params.phase1.example.json or test/params.local.json)
+           test/params.phase1.example.json or test/params.phase1.local.json)
 
 Dynamo node output:
-    OUT: elevation-report string from `phase1_build.main`, wired to a
-         Watch node. For this slice the report is purely informational
-         (no geometry is generated yet); follow-up slices will add
-         sample lines, sub-alignments, and swept solids.
+    OUT: build summary + elevation report string from `phase1_build.main`,
+         wired to a Watch node (the Player output). The run creates the
+         skeleton (sample lines, deck plan polygon) and regenerates the
+         solids (girders, haunches, deck slab).
 """
 import sys
 import os

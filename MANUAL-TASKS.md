@@ -567,6 +567,45 @@ geometries.  Straight-alignment regression confirmed clean.
 ### No remaining open items from this session
 
 
+## Dynamo Player UI verification — `src/bridge_wizard.dyn`
+
+The committed graph `src/bridge_wizard.dyn` is the Player-ready tool UI
+(two Player inputs → Python engine node → report Watch marked as Player
+output). It supersedes the hand-built, uncommitted `phase1_bridge.dyn`
+from the Phase 1 sessions. It was fabricated off-Windows by cloning the
+known-good `phase0_bridge.dyn` serialization (Dynamo 2.19.4), so it
+needs a one-time load/run verification:
+
+### Load + run in Dynamo proper
+- [ ] Open `src/bridge_wizard.dyn` in Dynamo for Civil 3D 2024. It must
+      load with zero errors/warnings in the notification pane — four
+      nodes (`Repo Root Folder`, `Bridge Params (JSON)`,
+      `Bridge Wizard Engine`, `Build Report`) wired left to right.
+- [ ] Confirm the Python node engine shows **CPython3** and its body is
+      identical to `src/phase1_node.py` minus the module docstring.
+- [ ] Point `Repo Root Folder` at your clone and
+      `Bridge Params (JSON)` at `test/params.phase1.local.json`; the
+      run type is Manual — click Run with the reference drawing open.
+      Expect the same skeleton + solids + report as the hand-built
+      graph (this is a regression check, not new behaviour).
+- [ ] If Dynamo rewrote the file on save (key order, version stamps),
+      commit Dynamo's version — from then on the graph has a
+      Dynamo-authored baseline.
+
+### Dynamo Player
+- [ ] In Civil 3D, open **Dynamo Player**, browse to the repo's `src/`
+      folder. `bridge_wizard` appears in the list with its description.
+- [ ] Click the edit-inputs (pencil) icon: exactly two inputs show —
+      `Repo Root Folder` (folder browser) and `Bridge Params (JSON)`
+      (file browser). Set both.
+- [ ] Run from Player against the reference drawing. The run completes
+      and `Build Report` shows the elevation report text in Player's
+      output panel.
+- [ ] Grip-edit round-trip still holds when run from Player: nudge a
+      deck-polygon vertex, re-run in Player, the edit is preserved and
+      the deck follows it.
+
+
 ## Operational notes for future runs
 
 - **`CTRL-S` the DWG** immediately after a successful Dynamo run.
