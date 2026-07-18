@@ -1,0 +1,267 @@
+{
+  "Uuid": "eacbd507-64e8-494a-b587-d1f2dd1385ad",
+  "IsCustomNode": false,
+  "Description": "Parametric bridge wizard for Civil 3D. Inputs: Repo Root Folder = the c3d-bridge-modeler repository folder; Bridge Params (JSON) = your project's parameter file (copy test/params.phase1.example.json and edit alignment/profile/surface names, stations, girders). Open the drawing with the bridge alignment data shortcuts attached, then Run. Creates the editable skeleton (support/bearing sample lines, deck plan polygon) and regenerates the solids (girders, haunches, deck slab) on BRIDGE-* layers. The Build Report output shows per-girder bearing elevations and a summary of created/preserved entities.",
+  "Name": "bridge_wizard",
+  "ElementResolver": {
+    "ResolutionMap": {}
+  },
+  "Inputs": [
+    {
+      "Id": "5bb4f2c18a21432bb3411a5e2f6a6fa8",
+      "Name": "Repo Root Folder",
+      "Type": "string",
+      "Type2": "string",
+      "Value": "C:\\Users\\ejimenez\\OneDrive - Stantec\\Documents\\Py\\c3d-bridge-modeler"
+    },
+    {
+      "Id": "7be7bc865a8f40739a22f3ca93c99f9a",
+      "Name": "Bridge Params (JSON)",
+      "Type": "string",
+      "Type2": "string",
+      "Value": "..\\test\\params.phase1.local.json"
+    }
+  ],
+  "Outputs": [
+    {
+      "Id": "62c87b9017a94d5b84068bf9e524936c",
+      "Name": "Build Report",
+      "Type": "unknown",
+      "InitialValue": ""
+    }
+  ],
+  "Nodes": [
+    {
+      "ConcreteType": "CoreNodeModels.Input.Directory, CoreNodeModels",
+      "Id": "5bb4f2c18a21432bb3411a5e2f6a6fa8",
+      "NodeType": "ExtensionNode",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "11180291c1aa426ab3d4aca83613fddd",
+          "Name": "",
+          "Description": "Directory path",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Allows you to select a directory on the system and returns its path",
+      "HintPath": "C:\\Users\\ejimenez\\OneDrive - Stantec\\Documents\\Py\\c3d-bridge-modeler",
+      "InputValue": "C:\\Users\\ejimenez\\OneDrive - Stantec\\Documents\\Py\\c3d-bridge-modeler"
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Input.Filename, CoreNodeModels",
+      "Id": "7be7bc865a8f40739a22f3ca93c99f9a",
+      "NodeType": "ExtensionNode",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "4190e2c037dc4efa9b82f822134588a6",
+          "Name": "",
+          "Description": "File Path",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Allows you to select a file on the system and returns its file path",
+      "HintPath": "C:\\Users\\ejimenez\\OneDrive - Stantec\\Documents\\Py\\c3d-bridge-modeler\\test\\params.phase1.local.json",
+      "InputValue": "..\\test\\params.phase1.local.json"
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "Code": "import sys\r\nimport os\r\n\r\n# Reload trigger — bump this number after `git pull` to force Dynamo to\r\n# treat the node as dirty and re-execute (Dynamo caches by node-body\r\n# content, so a no-op text change is enough). This is the only edit you\r\n# typically need to make to the node body itself; everything else lives\r\n# in the imported `src/*.py` files and is reloaded via the sys.modules\r\n# purge below.\r\nprint(\"[phase1_node] reload trigger v28\")\r\n\r\nrepo_root = IN[0]                                               # noqa: F821\r\nparams_path = IN[1]                                             # noqa: F821\r\n\r\nsrc_path = os.path.join(repo_root, \"src\")\r\n\r\n# Defensive: sys.path persists across Dynamo graph runs. If the user\r\n# previously pointed `repo_root` at a different clone (e.g. an old\r\n# OneDrive-backed working copy), THAT path is still in sys.path and\r\n# can shadow our new clone for some imports. Strip any stale\r\n# c3d-bridge-modeler entries before inserting the current one.\r\nsys.path[:] = [p for p in sys.path if \"c3d-bridge-modeler\" not in p]\r\nsys.path.insert(0, src_path)\r\n\r\n# Drop every Phase 1 src/ module from sys.modules so the next import is\r\n# fresh — `importlib.reload` only refreshes a single module, leaving its\r\n# already-imported dependencies stale.\r\n_OWN_MODULES = (\r\n    \"phase1_build\",\r\n    \"phase1_compute\",\r\n    \"phase1_params\",\r\n    \"station_profile\",\r\n    \"elevation\",\r\n    \"units\",\r\n    \"aisc\",\r\n    \"skeleton\",\r\n    \"bridge_lines\",\r\n    \"deck_polygon\",\r\n    \"deck_plan\",\r\n    \"girders\",\r\n    \"girder_geometry\",\r\n    \"haunches\",\r\n    \"haunch_geometry\",\r\n    \"decks\",\r\n    \"deck_geometry\",\r\n    \"layers\",\r\n    \"xdata\",\r\n    \"c3d_doc\",\r\n    \"alignment\",\r\n)\r\nfor _name in _OWN_MODULES:\r\n    if _name in sys.modules:\r\n        del sys.modules[_name]\r\n\r\nimport phase1_build\r\nOUT = phase1_build.main(repo_root, params_path)                 # noqa: F821",
+      "Engine": "CPython3",
+      "EngineName": "CPython3",
+      "VariableInputPorts": true,
+      "Id": "246c6e24d27d4b5fb3c2a3196e06a0d5",
+      "NodeType": "PythonScriptNode",
+      "Inputs": [
+        {
+          "Id": "d5364c98d02c4162acd32bfc784f78f6",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "1ee6cd00fc984a84b7ac44af8e556af8",
+          "Name": "IN[1]",
+          "Description": "Input #1",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "a1837186ddab4cd28adbbef649fe62e9",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded Python script."
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Watch, CoreNodeModels",
+      "WatchWidth": 520.0,
+      "WatchHeight": 420.0,
+      "Id": "62c87b9017a94d5b84068bf9e524936c",
+      "NodeType": "ExtensionNode",
+      "Inputs": [
+        {
+          "Id": "bcdd634c8bc84d67af0645b869b46a3e",
+          "Name": "",
+          "Description": "Node to show output from",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "799c13228873479d96028d586dc72546",
+          "Name": "",
+          "Description": "Node output",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Visualizes a node's output"
+    }
+  ],
+  "Connectors": [
+    {
+      "Start": "11180291c1aa426ab3d4aca83613fddd",
+      "End": "d5364c98d02c4162acd32bfc784f78f6",
+      "Id": "dc3342f5942e44d4b7cbed2903480795",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "4190e2c037dc4efa9b82f822134588a6",
+      "End": "1ee6cd00fc984a84b7ac44af8e556af8",
+      "Id": "c01a6c258d0a4a08bb6029f2ee462592",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "a1837186ddab4cd28adbbef649fe62e9",
+      "End": "bcdd634c8bc84d67af0645b869b46a3e",
+      "Id": "ea8b6f7308c4463784aa8fdf06db9abd",
+      "IsHidden": "False"
+    }
+  ],
+  "Dependencies": [],
+  "NodeLibraryDependencies": [
+    {
+      "Name": "params.phase1.local.json",
+      "ReferenceType": "External",
+      "Nodes": [
+        "7be7bc865a8f40739a22f3ca93c99f9a"
+      ]
+    }
+  ],
+  "Thumbnail": "",
+  "GraphDocumentationURL": null,
+  "ExtensionWorkspaceData": [
+    {
+      "ExtensionGuid": "28992e1d-abb9-417f-8b1b-05e053bee670",
+      "Name": "Properties",
+      "Version": "2.19",
+      "Data": {}
+    }
+  ],
+  "Author": "",
+  "Linting": {
+    "activeLinter": "None",
+    "activeLinterId": "7b75fb44-43fd-4631-a878-29f4d5d8399a",
+    "warningCount": 0,
+    "errorCount": 0
+  },
+  "Bindings": [],
+  "View": {
+    "Dynamo": {
+      "ScaleFactor": 1.0,
+      "HasRunWithoutCrash": true,
+      "IsVisibleInDynamoLibrary": true,
+      "Version": "2.19.4.6671",
+      "RunType": "Manual",
+      "RunPeriod": "1000"
+    },
+    "Camera": {
+      "Name": "_Background Preview",
+      "EyeX": -17.0,
+      "EyeY": 24.0,
+      "EyeZ": 50.0,
+      "LookX": 12.0,
+      "LookY": -13.0,
+      "LookZ": -58.0,
+      "UpX": 0.0,
+      "UpY": 1.0,
+      "UpZ": 0.0
+    },
+    "ConnectorPins": [],
+    "NodeViews": [
+      {
+        "Id": "5bb4f2c18a21432bb3411a5e2f6a6fa8",
+        "Name": "Repo Root Folder",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 120.0,
+        "Y": 300.0
+      },
+      {
+        "Id": "7be7bc865a8f40739a22f3ca93c99f9a",
+        "Name": "Bridge Params (JSON)",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 120.0,
+        "Y": 470.0
+      },
+      {
+        "Id": "246c6e24d27d4b5fb3c2a3196e06a0d5",
+        "Name": "Bridge Wizard Engine",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 640.0,
+        "Y": 380.0
+      },
+      {
+        "Id": "62c87b9017a94d5b84068bf9e524936c",
+        "Name": "Build Report",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": true,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 920.0,
+        "Y": 380.0
+      }
+    ],
+    "Annotations": [],
+    "X": 0.0,
+    "Y": 0.0,
+    "Zoom": 0.8
+  }
+}

@@ -18,6 +18,17 @@ Without this, the workflow bounces through InfraWorks, Inventor, and back to Civ
 
 Write a JSON file describing your bridge -- girder type, spacing, supports, skew angles, deck dimensions. Open a Civil 3D drawing with alignment data shortcuts and run the Dynamo graph. It reads the JSON, queries the alignment/profile for geometry, and places 3D solids in the drawing.
 
+### Running it
+
+The tool UI is `src/bridge_wizard.dyn`, built for **Dynamo Player** so nobody has to open a graph to use it:
+
+1. Copy `test/params.phase1.example.json` somewhere local (e.g. `test/params.phase1.local.json`, which is gitignored) and edit it with your alignment/profile/surface names, stations, supports, and girders.
+2. In Civil 3D, open the drawing with the bridge alignment data shortcuts attached.
+3. Open **Dynamo Player**, browse to this repo's `src/` folder, and pick `bridge_wizard`.
+4. Set the two inputs -- **Repo Root Folder** (this repository) and **Bridge Params (JSON)** (your params file) -- and run. The **Build Report** output shows per-girder bearing elevations and what was created or preserved.
+
+The same graph opens in full Dynamo for development; the Python node body is version-controlled in `src/phase1_node.py`.
+
 Two kinds of output:
 
 - **Skeleton** (sample lines at supports, deck plan polygon) -- preserved across runs. Designers can grip-edit these; the tool reads positions back on the next run.

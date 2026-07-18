@@ -136,6 +136,11 @@ The fix is Inventor-style: a single editable sketch entity drives the solid.
   - Bearing-line sample lines: created alongside support sample lines.
   - No kinks visible in any view style (consistent with `crown_offset=9` placing the crown fully right of the deck, making the cross-section a parallelogram).
 
+### Done (Phase 2.2, Dynamo Player tool UI) — ⚠ pending Windows verification
+- **Committed Player-ready graph (`src/bridge_wizard.dyn`)** — the tool UI: `Repo Root Folder` (Directory Path) and `Bridge Params (JSON)` (File Path) marked `IsSetAsInput` for Dynamo Player, Python engine node, `Build Report` Watch marked `IsSetAsOutput`. Run type Manual. Supersedes the hand-built, never-committed `phase1_bridge.dyn`.
+- The graph JSON was **fabricated from the known-good `phase0_bridge.dyn` serialization** (Dynamo 2.19.4 / C3D 2024) rather than authored in Dynamo — same node ConcreteTypes, port/connector shape, and top-level key order; fresh GUIDs; top-level `Inputs`/`Outputs` arrays populated for Player. One-time load/run verification checklist is in `MANUAL-TASKS.md` § "Dynamo Player UI verification". If Dynamo rewrites the file on save, commit Dynamo's version as the new baseline.
+- **Sync contract:** the Python node's `Code` field must stay byte-identical to `src/phase1_node.py` minus the module docstring (CRLF line endings). Editing `phase1_node.py` means re-embedding the body in the graph.
+
 ### Known deferrals (gated at params parse time)
 - **`follow_superelevation: true`** — alignment-superelevation tracking is not implemented; setting `true` raises `Phase1ParamsError` rather than silently rendering a non-superelevated deck.
 - **Station-varying `crown_offset`** — deck solid construction is a constant-section sweep, so multi-point profiles raise `Phase1ParamsError`. (Station-varying `deck_cl_offset_from_alignment` IS now supported as of Phase 2.1, gated on no-crown-kink-at-any-bearing.)
