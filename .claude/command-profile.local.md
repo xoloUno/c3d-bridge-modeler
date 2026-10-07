@@ -11,14 +11,14 @@ cannot execute the graph against Civil 3D. There is no build, no lint, and no te
 
 Fold these into the briefing after the universal git steps:
 
-- **Current phase.** Read the **`## Current Phase`** section of `CLAUDE.md` and quote the active
+- **Current phase.** Read the **`## Current Phase`** section of `AGENTS.md` and quote the active
   phase as a `**Current phase:** <…>` headline line. (Phases are defined in the repo-root
-  `scope.md` — Phase 0 → POC, Phase 1 → first parametric superstructure, etc.; `CLAUDE.md` tracks
+  `scope.md` — Phase 0 → POC, Phase 1 → first parametric superstructure, etc.; `AGENTS.md` tracks
   which one is in flight. The universal skeleton's own "Current State" read finds no such heading
   here and correctly skips — this section is what surfaces project state instead.)
 - **Project layout.** Report which of `src/`, `data/`, `test/` already exist as a
   `**Project layout:** src/ <yes|missing> · data/ <yes|missing> · test/ <yes|missing>` line
-  (`CLAUDE.md` documents these as the target layout). A missing directory is *expected* — note
+  (`AGENTS.md` documents these as the target layout). A missing directory is *expected* — note
   it without raising a flag.
 - **Manual tasks (Civil-3D framing).** The universal step already lists unchecked
   `MANUAL-TASKS.md` items. Here the canonical manual-task category is **Civil-3D-side
@@ -42,7 +42,8 @@ Slot these into the universal flow at the stage named — not in list order.
 
 **Record mutations (stage 3 — before staging):**
 
-- **Update `CLAUDE.md`** if the session advanced project state:
+- **Update `AGENTS.md`** (its project-owned part, never the generated core block; `CLAUDE.md` is a
+  symlink to it) if the session advanced project state:
   - **`## Current Phase`** is the closest thing this project has to a "last completed / next up"
     field — update it when a phase milestone lands or the next session's focus shifts.
   - **`## File Structure`** — update if `src/`, `data/`, or `test/` gained real content.
@@ -66,7 +67,7 @@ Slot these into the universal flow at the stage named — not in list order.
 **Commit (stage 6):**
 
 - Scopes that fit this project: `dynamo` (graph changes), `python` (node scripts), `params`
-  (JSON parameter format), `data` (AISC tables), `docs`, `scope`, `claude` (`CLAUDE.md` / `.claude/`
+  (JSON parameter format), `data` (AISC tables), `docs`, `scope`, `claude` (`AGENTS.md` / `.claude/`
   updates).
 - **`.dyn` files are merge-hostile** — JSON under the hood, but large and diff-noisy. Keep
   graph-only commits separate from Python-script-only commits when feasible, so future blame and
