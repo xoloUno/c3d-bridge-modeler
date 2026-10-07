@@ -5,7 +5,9 @@ is **no `command-profile.md`** (the pack layer) for it. The universal `/status` 
 skeletons load this file at runtime and fold its sections in. It carries this project's own
 judgment: it's a `.dyn` graph plus PythonNet node scripts whose truth lives in Civil 3D 2026+ at
 runtime on Windows — Claude Code can read, edit, and reason about the source from macOS, but
-cannot execute the graph against Civil 3D. There is no build, no lint, and no test runner today.
+cannot execute the graph against Civil 3D. There is no build and no lint. The pure-math Python
+modules have a pytest suite under `test/`, declared as `test_command` in `.claude/project.yml`;
+it runs on macOS and doesn't touch the Dynamo graph or Civil 3D.
 
 ## /status
 
@@ -74,8 +76,9 @@ Slot these into the universal flow at the stage named — not in list order.
   revert stay surgical. (A graph-side change and an unrelated docs polish should be two commits,
   not one.)
 
-**Validation gates (stage 4):** none today — no build, no lint, no test runner. The universal
-gate step finds no `test_command` and no pack, and correctly no-ops. If a lightweight Python lint
+**Validation gates (stage 4):** run the `test_command` from `.claude/project.yml` (the pure-math
+suite under `test/`). It can't exercise the Dynamo graph or anything that needs Civil 3D; those
+stay manual tasks. There's no build or lint. If a lightweight Python lint
 (`ruff`, `pyflakes`) or a graph-extraction script is added later, run it here before staging.
 
 **Steps that no-op here:** no `[skip ci]` (no CI lanes), no release-notes draft, no

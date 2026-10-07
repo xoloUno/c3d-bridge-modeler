@@ -123,7 +123,7 @@ See `docs/scope.md` for the full project scope, parameter definitions, phased de
 docs/scope.md          Full project scope and development plan
 src/                   Dynamo graphs (.dyn) and Python scripts (.py)
 data/                  AISC shape tables, parameter templates
-test/                  Test parameter files and expected outputs
+test/                  Test parameter files, expected outputs, and the pytest suite
 ```
 
 ## Development Notes
