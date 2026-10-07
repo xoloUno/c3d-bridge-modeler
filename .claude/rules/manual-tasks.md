@@ -1,1 +1,0 @@
-../../../_playbook/core/rules/manual-tasks.md

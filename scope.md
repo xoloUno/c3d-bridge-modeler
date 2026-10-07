@@ -722,7 +722,7 @@ The mode is determined automatically: if a Sample Line Group for this bridge alr
 | Sub-alignment accumulation on repeated create runs | Drawing fills with orphaned alignments | Detect existing sub-alignments by naming convention, delete before recreating |
 | Scope creep: "just one more parameter" per bridge type | Timeline balloons from 10 weeks to 10 months | Strict phase gates; Phase 1 = straight steel girder superstructure only |
 | AISC shape data licensing | Can't distribute shape tables | AISC dimensions are published in publicly available resources; include a curated subset; allow user override |
-| Dynamo version compatibility across Civil 3D versions | Script breaks on upgrade | Target Civil 3D 2024 (Dynamo 2.x); use CPython 3 / PythonNet 3 exclusively; avoid deprecated nodes; document PythonNet 3 quirks in CLAUDE.md so they don't get re-discovered |
+| Dynamo version compatibility across Civil 3D versions | Script breaks on upgrade | Target Civil 3D 2024 (Dynamo 2.x); use CPython 3 / PythonNet 3 exclusively; avoid deprecated nodes; document PythonNet 3 quirks in AGENTS.md so they don't get re-discovered |
 | Template drawing becomes stale as tool evolves | Layer/style definitions drift from what the tool expects | Version-stamp the template; tool checks template version on load and warns if outdated |
 
 ---

@@ -8,7 +8,7 @@ Dynamo graph + CPython 3 scripts calling the Civil 3D .NET API through PythonNet
 
 **Phase 2 complete** (2026-05-20). Generates a steel girder superstructure -- girders, haunches, deck slab -- as AutoCAD `Solid3d` objects with xdata tags. Tested on a Civil 3D alignment with asymmetric skew, curved geometry, fanning width, longitudinal grade, and shifting deck CL.
 
-Next: super-elevation, substructure (piers/abutments/footings), multi-span, curved/chorded girders. See [CLAUDE.md](CLAUDE.md) for the phase log.
+Next: super-elevation, substructure (piers/abutments/footings), multi-span, curved/chorded girders. See [AGENTS.md](AGENTS.md) for the phase log.
 
 ## Problem
 
@@ -79,7 +79,7 @@ C3D-side modules are tested by running the Dynamo graph on Windows. See [MANUAL-
 
 - **[docs/architecture.md](docs/architecture.md)** -- pipeline, diagrams, geometry construction
 - **[scope.md](scope.md)** -- project scope, parameter definitions, development plan
-- **[CLAUDE.md](CLAUDE.md)** -- development log, phase records, PythonNet 3 quirks
+- **[AGENTS.md](AGENTS.md)** -- development log, phase records, PythonNet 3 quirks
 
 ## License
 

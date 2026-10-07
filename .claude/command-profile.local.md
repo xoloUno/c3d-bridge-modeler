@@ -5,20 +5,22 @@ is **no `command-profile.md`** (the pack layer) for it. The universal `/status` 
 skeletons load this file at runtime and fold its sections in. It carries this project's own
 judgment: it's a `.dyn` graph plus PythonNet node scripts whose truth lives in Civil 3D 2026+ at
 runtime on Windows — Claude Code can read, edit, and reason about the source from macOS, but
-cannot execute the graph against Civil 3D. There is no build, no lint, and no test runner today.
+cannot execute the graph against Civil 3D. There is no build and no lint. The pure-math Python
+modules have a pytest suite under `test/`, declared as `test_command` in `.claude/project.yml`;
+it runs on macOS and doesn't touch the Dynamo graph or Civil 3D.
 
 ## /status
 
 Fold these into the briefing after the universal git steps:
 
-- **Current phase.** Read the **`## Current Phase`** section of `CLAUDE.md` and quote the active
+- **Current phase.** Read the **`## Current Phase`** section of `AGENTS.md` and quote the active
   phase as a `**Current phase:** <…>` headline line. (Phases are defined in the repo-root
-  `scope.md` — Phase 0 → POC, Phase 1 → first parametric superstructure, etc.; `CLAUDE.md` tracks
+  `scope.md` — Phase 0 → POC, Phase 1 → first parametric superstructure, etc.; `AGENTS.md` tracks
   which one is in flight. The universal skeleton's own "Current State" read finds no such heading
   here and correctly skips — this section is what surfaces project state instead.)
 - **Project layout.** Report which of `src/`, `data/`, `test/` already exist as a
   `**Project layout:** src/ <yes|missing> · data/ <yes|missing> · test/ <yes|missing>` line
-  (`CLAUDE.md` documents these as the target layout). A missing directory is *expected* — note
+  (`AGENTS.md` documents these as the target layout). A missing directory is *expected* — note
   it without raising a flag.
 - **Manual tasks (Civil-3D framing).** The universal step already lists unchecked
   `MANUAL-TASKS.md` items. Here the canonical manual-task category is **Civil-3D-side
@@ -42,7 +44,8 @@ Slot these into the universal flow at the stage named — not in list order.
 
 **Record mutations (stage 3 — before staging):**
 
-- **Update `CLAUDE.md`** if the session advanced project state:
+- **Update `AGENTS.md`** (its project-owned part, never the generated core block; `CLAUDE.md` is a
+  symlink to it) if the session advanced project state:
   - **`## Current Phase`** is the closest thing this project has to a "last completed / next up"
     field — update it when a phase milestone lands or the next session's focus shifts.
   - **`## File Structure`** — update if `src/`, `data/`, or `test/` gained real content.
@@ -66,15 +69,16 @@ Slot these into the universal flow at the stage named — not in list order.
 **Commit (stage 6):**
 
 - Scopes that fit this project: `dynamo` (graph changes), `python` (node scripts), `params`
-  (JSON parameter format), `data` (AISC tables), `docs`, `scope`, `claude` (`CLAUDE.md` / `.claude/`
+  (JSON parameter format), `data` (AISC tables), `docs`, `scope`, `claude` (`AGENTS.md` / `.claude/`
   updates).
 - **`.dyn` files are merge-hostile** — JSON under the hood, but large and diff-noisy. Keep
   graph-only commits separate from Python-script-only commits when feasible, so future blame and
   revert stay surgical. (A graph-side change and an unrelated docs polish should be two commits,
   not one.)
 
-**Validation gates (stage 4):** none today — no build, no lint, no test runner. The universal
-gate step finds no `test_command` and no pack, and correctly no-ops. If a lightweight Python lint
+**Validation gates (stage 4):** run the `test_command` from `.claude/project.yml` (the pure-math
+suite under `test/`). It can't exercise the Dynamo graph or anything that needs Civil 3D; those
+stay manual tasks. There's no build or lint. If a lightweight Python lint
 (`ruff`, `pyflakes`) or a graph-extraction script is added later, run it here before staging.
 
 **Steps that no-op here:** no `[skip ci]` (no CI lanes), no release-notes draft, no

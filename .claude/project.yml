@@ -1,0 +1,4 @@
+# c3d-bridge-modeler instance facts, read at runtime by the universal /status, /wrapup and /test.
+# Declarative facts only. A kind-of-one with no pack: project judgment lives in
+# command-profile.local.md.
+test_command: python3 -m pytest -q test   # the pure-math suite; runs on macOS without Civil 3D
