@@ -3,8 +3,9 @@
 Phase 1 scope: straight steel girder superstructure (deck, girders,
 haunches), single or multi-span, with flared/variable girder spacing
 and skewed supports. Substructure is Phase 1b (separate schema). Plate
-girders, curved girder geometry, diaphragms, and haunch chamfer are
-all deferred past this slice.
+girders, curved girder geometry, and diaphragms are deferred past this
+slice. `haunch_chamfer` (default 0) is parsed here; the profile outline
+lives in `haunch_geometry.py`.
 
 All linear dimensions and stations are in feet. Cross slopes are in
 percent (% rise per foot, signed). Skew angles are in degrees from
@@ -118,6 +119,9 @@ class Superstructure:
     haunch_depth: float
     haunch_width_mode: str = "MATCH_TOP_FLANGE"
     haunch_width: Optional[float] = None
+    # Equal-leg 45° outward fillet at each top corner, in feet.
+    # 0 keeps the 4-vertex trapezoid. Must be < haunch_depth.
+    haunch_chamfer: float = 0.0
     girder_geometry: str = "STRAIGHT"
     end_diaphragm: bool = False
     topping_depth: float = 0.0
@@ -411,6 +415,22 @@ def _parse_superstructure(raw: dict, idx: int) -> Superstructure:
         raise Phase1ParamsError(
             f"{where}.haunch_depth must be > 0 (got {haunch_depth})"
         )
+    haunch_chamfer = float(raw.get("haunch_chamfer", 0.0))
+    if haunch_chamfer < 0.0:
+        raise Phase1ParamsError(
+            f"{where}.haunch_chamfer must be >= 0 (got {haunch_chamfer})"
+        )
+    # haunch_depth is the height at the web centerline and the height on
+    # both sides when cross-slope is zero. A chamfer that consumes that
+    # whole height cannot fit on either top corner. Cross-slope can make
+    # one side shorter still; haunch_profile_vertices_ft rejects that
+    # against the actual h_left / h_right.
+    if haunch_chamfer >= haunch_depth:
+        raise Phase1ParamsError(
+            f"{where}.haunch_chamfer ({haunch_chamfer} ft) does not fit in "
+            f"the haunch height on either side (haunch_depth is "
+            f"{haunch_depth} ft); chamfer must be < haunch_depth"
+        )
     topping_depth = float(raw.get("topping_depth", 0.0))
     if topping_depth < 0:
         raise Phase1ParamsError(
@@ -434,6 +454,7 @@ def _parse_superstructure(raw: dict, idx: int) -> Superstructure:
         haunch_depth=haunch_depth,
         haunch_width_mode=haunch_mode,
         haunch_width=None if haunch_width is None else float(haunch_width),
+        haunch_chamfer=haunch_chamfer,
         girder_geometry=geometry,
         end_diaphragm=bool(raw.get("end_diaphragm", False)),
         topping_depth=topping_depth,

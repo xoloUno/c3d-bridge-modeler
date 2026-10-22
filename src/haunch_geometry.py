@@ -1,9 +1,9 @@
 """Pure-math helpers for haunch cross-section geometry.
 
 The haunch is the concrete pad between the top of the steel girder's
-top flange and the underside of the deck slab. In Phase 1 baseline it
-is modeled as a 4-vertex trapezoid (the ideal hexagonal-with-chamfers
-shape from the project memory is deferred to a later slice).
+top flange and the underside of the deck slab. With no chamfer it is
+a 4-vertex trapezoid. A positive `chamfer_ft` flares the top outer
+corners outward, and the outline becomes a 6-vertex hexagon.
 
 Coordinate convention
 ---------------------
@@ -47,6 +47,29 @@ exposed this convention; the symmetric I-shape girder profile in
 `girder_geometry.py` was unaffected by it, since the I-shape is
 left-right mirror-symmetric.)
 
+Chamfer
+-------
+`chamfer_ft` is the leg length of an equal-leg 45° fillet added
+outside each top corner (a concrete fillet for formwork release).
+The spec gives one size and no angle, so both legs are that size:
+
+- vertical faces stay on `u = ±bf/2` from the flange (`v = 0`) up to
+  `side_height - chamfer_ft`
+- each fillet then runs outward and upward with `Δu = Δv = chamfer_ft`
+- the outer top vertices sit one chamfer outside the flange edge, at
+  the full side height: `(+bf/2 + chamfer, h_left)` and
+  `(-bf/2 - chamfer, h_right)`
+- the top edge joins those two vertices, so its slope is
+  `(h_left - h_right) / (bf + 2·chamfer)`
+
+`chamfer_ft == 0` skips the fillet vertices and returns the original
+4-tuple. A chamfer must be `>= 0` and strictly less than both
+`h_left_ft` and `h_right_ft`; otherwise the vertical face on that
+side disappears or drops through the flange.
+
+The swept solid in `haunches.py` does not consume this outline yet.
+It still sweeps an over-tall rectangle and trims it with the deck.
+
 Constant-profile assumption
 ---------------------------
 For a girder fully on one side of the deck crown and constant cross-
@@ -78,8 +101,14 @@ def haunch_profile_vertices_ft(
     bf_ft: float,
     h_left_ft: float,
     h_right_ft: float,
+    chamfer_ft: float = 0.0,
 ) -> Tuple[Vertex, ...]:
-    """Return the closed 4-vertex haunch outline in `(u, v)` feet.
+    """Return the closed haunch outline in `(u, v)` feet.
+
+    `chamfer_ft == 0` (the default) returns the 4-vertex trapezoid.
+    `chamfer_ft > 0` returns a 6-vertex hexagon whose top is wider than
+    the flange by `2 * chamfer_ft`. See the module docstring for the
+    45° fillet placement.
 
     Vertices trace clockwise starting at the bottom-left, so the
     Civil-3D-side polyline winding matches the girder profile builder
@@ -99,14 +128,31 @@ def haunch_profile_vertices_ft(
             f"height means the deck bottom is at or below the girder top "
             f"flange — geometry would self-intersect."
         )
+    if chamfer_ft < 0.0:
+        raise ValueError(f"chamfer_ft must be >= 0; got {chamfer_ft}")
+    if chamfer_ft >= h_left_ft or chamfer_ft >= h_right_ft:
+        raise ValueError(
+            f"chamfer_ft ({chamfer_ft}) does not fit in the haunch height on "
+            f"either side (h_left_ft={h_left_ft}, h_right_ft={h_right_ft}); "
+            f"chamfer must be < the height on each side"
+        )
 
     half_bf = bf_ft / 2.0
     # See module docstring: profile +u maps to alignment-LEFT after the
     # Civil-3D-side Matrix3d transform (cross_xy is 90° CCW from girder
     # direction), so h_left_ft goes at +bf/2 and h_right_ft at -bf/2.
+    if chamfer_ft == 0.0:
+        return (
+            (-half_bf, 0.0),         # 0: bottom on alignment-RIGHT side
+            (+half_bf, 0.0),         # 1: bottom on alignment-LEFT side
+            (+half_bf, h_left_ft),   # 2: top on alignment-LEFT side
+            (-half_bf, h_right_ft),  # 3: top on alignment-RIGHT side
+        )
     return (
-        (-half_bf, 0.0),         # 0: bottom on alignment-RIGHT side
-        (+half_bf, 0.0),         # 1: bottom on alignment-LEFT side
-        (+half_bf, h_left_ft),   # 2: top on alignment-LEFT side
-        (-half_bf, h_right_ft),  # 3: top on alignment-RIGHT side
+        (-half_bf, 0.0),                              # bottom, alignment-RIGHT
+        (+half_bf, 0.0),                              # bottom, alignment-LEFT
+        (+half_bf, h_left_ft - chamfer_ft),           # left vertical face ends
+        (+half_bf + chamfer_ft, h_left_ft),           # outer top, alignment-LEFT
+        (-half_bf - chamfer_ft, h_right_ft),          # outer top, alignment-RIGHT
+        (-half_bf, h_right_ft - chamfer_ft),          # right vertical face ends
     )

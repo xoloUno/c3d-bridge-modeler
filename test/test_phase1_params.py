@@ -331,6 +331,59 @@ def test_topping_depth_must_be_nonnegative():
         p1.parse(raw)
 
 
+# ----------------------------------------------------------------------
+# haunch_chamfer
+# ----------------------------------------------------------------------
+
+def test_haunch_chamfer_defaults_to_zero():
+    params = p1.parse(_valid_raw())
+    assert params.superstructures[0].haunch_chamfer == 0.0
+
+
+def test_haunch_chamfer_explicit_zero_accepted():
+    raw = _valid_raw()
+    raw["superstructures"][0]["haunch_chamfer"] = 0
+    params = p1.parse(raw)
+    assert params.superstructures[0].haunch_chamfer == 0.0
+
+
+def test_haunch_chamfer_accepted_when_shorter_than_depth():
+    raw = _valid_raw()
+    raw["superstructures"][0]["haunch_depth"] = 0.25
+    raw["superstructures"][0]["haunch_chamfer"] = 0.083
+    params = p1.parse(raw)
+    assert params.superstructures[0].haunch_chamfer == pytest.approx(0.083)
+
+
+def test_haunch_chamfer_negative_rejected():
+    raw = _valid_raw()
+    raw["superstructures"][0]["haunch_chamfer"] = -0.01
+    with pytest.raises(p1.Phase1ParamsError, match="haunch_chamfer must be >= 0"):
+        p1.parse(raw)
+
+
+def test_haunch_chamfer_equal_to_depth_does_not_fit_either_side():
+    raw = _valid_raw()
+    raw["superstructures"][0]["haunch_depth"] = 0.25
+    raw["superstructures"][0]["haunch_chamfer"] = 0.25
+    with pytest.raises(
+        p1.Phase1ParamsError,
+        match="does not fit in the haunch height on either side",
+    ):
+        p1.parse(raw)
+
+
+def test_haunch_chamfer_greater_than_depth_does_not_fit_either_side():
+    raw = _valid_raw()
+    raw["superstructures"][0]["haunch_depth"] = 0.0833
+    raw["superstructures"][0]["haunch_chamfer"] = 0.1
+    with pytest.raises(
+        p1.Phase1ParamsError,
+        match="does not fit in the haunch height on either side",
+    ):
+        p1.parse(raw)
+
+
 def test_girder_spacing_must_be_positive():
     raw = _valid_raw()
     raw["superstructures"][0]["girder_spacings_start"] = [8.0, 0.0, 8.0]
